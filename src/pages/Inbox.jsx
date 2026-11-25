@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ago, fmtDateTime, fmtPhone } from "../lib/format";
-import { Badge, CopyButton, Empty, ErrorNote, Field, Modal, Spinner, useToast } from "../components/ui";
+import { Badge, CopyButton, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
 import { DATE_TYPES } from "./Dates";
 
 export const notReady = (toast, what) => toast(`${what} isn’t working yet. It’s switched on in a later stage.`, "warn");
@@ -189,14 +189,17 @@ function Thread({ conv, threshold, onBack, onChanged }) {
       </div>
 
       {canAct && (
-        <div className="row thread-actions">
-          {conv.hot?.active
-            ? <button className="btn btn-sm" onClick={() => setModal({ hot: false })}>Take out of Hot Leads</button>
-            : <button className="btn btn-sm btn-primary" onClick={() => setModal({ hot: true })}>Move to Hot Leads</button>}
-          <button className="btn btn-sm" onClick={() => setModal("date")}>Set follow-up</button>
-          <button className="btn btn-sm" onClick={() => setModal("dnc")}>Do Not Contact</button>
-          <button className="btn btn-sm" onClick={() => notReady(toast, "Sending to the CRM")}>Send to CRM</button>
-          <button className="btn btn-sm btn-link" onClick={archive}>Archive</button>
+        <div className="thread-actions" role="group" aria-label="What to do with this lead">
+          <span className="act-title">Next step</span>
+          <div className="act-row">
+            {conv.hot?.active
+              ? <button className="act act-hot-on" onClick={() => setModal({ hot: false })}><Icon d={ICONS.flame} />Take out of Hot Leads</button>
+              : <button className="act act-hot" onClick={() => setModal({ hot: true })}><Icon d={ICONS.flame} />Move to Hot Leads</button>}
+            <button className="act act-date" onClick={() => setModal("date")}><Icon d={ICONS.calendar} />Set follow-up</button>
+            <button className="act act-dnc" onClick={() => setModal("dnc")}><Icon d={ICONS.block} />Do Not Contact</button>
+            <button className="act act-crm" onClick={() => notReady(toast, "Sending to the CRM")}><Icon d={ICONS.send} />Send to CRM</button>
+            <button className="act act-archive" onClick={archive}><Icon d={ICONS.archive} />Archive</button>
+          </div>
         </div>
       )}
       {scores.length > 1 && (
