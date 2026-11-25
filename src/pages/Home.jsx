@@ -140,8 +140,8 @@ function DemoCard() {
           <h2>Demo data <span className="badge b-muted" style={{ marginLeft: 6 }}>Super Admin</span></h2>
           <p className="muted small" style={{ marginTop: 4 }}>
             {state.loadedAt
-              ? `Loaded ${new Date(state.loadedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}. Each agent has the same starter set: three campaigns (running, draft, ended), eight conversations with AI scores, hot leads, dates and Do Not Contact entries. Branch Owners see their agents’ sets; admins see all.`
-              : `Gives each of the ${state.agents} active agent${state.agents === 1 ? "" : "s"} the same starter set to play with: campaigns, inbox conversations with AI scores, hot leads, dates, Do Not Contact and a Shotgun clash. Everything is tagged, so one click removes it all.`}
+              ? `Loaded ${new Date(state.loadedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}. Each agent has their own set with different people: three campaigns (running, draft, ended), eight conversations with AI scores, hot leads, dates and Do Not Contact entries. Branch Owners see their agents’ sets; admins see all. Super Admins don’t get a set.`
+              : `Gives each of the ${state.agents} active agent${state.agents === 1 ? "" : "s"} their own set of made-up people to play with: campaigns, inbox conversations with AI scores, hot leads, dates, Do Not Contact and a Shotgun clash. Everything is tagged, so one click removes it all.`}
           </p>
           {msg && <p className={`small ${msg.bad ? "t-bad" : ""}`}>{msg.text}</p>}
         </div>
