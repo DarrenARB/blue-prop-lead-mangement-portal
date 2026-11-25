@@ -12,7 +12,7 @@ Multi-user portal in front of lemlist so Blue PROP (Blue Property Group, South A
 - `src/pages/` — Setup (first run), Login, ChangePassword, Home, Team (branches & people), Lemlist (connection & numbers), Plan (project plan + Fin-Link money panel), Audit.
 - `src/lib/` — `supabase.js` (client + `callFn` for Edge Functions), `auth.jsx` (session/profile context), `format.js`.
 - `supabase/functions/admin-users` — bootstrap, invite (temp password), update, deactivate, reactivate, reset_password.
-- `supabase/functions/lemlist` — test, available_users, connect, disconnect, sync, assign, record_reconnection. Read-only towards lemlist so far.
+- `supabase/functions/lemlist` — test, available_users, connect, disconnect, sync (raises support alerts on status changes), assign, record_reconnection. Read-only towards lemlist so far.
 - `supabase/migrations/` — schema history as applied. `supabase/seed.sql` — the 56 plan items. (`pg_net` was enabled outside migrations: `create extension pg_net;`.)
 
 ## Rules that matter
@@ -20,7 +20,10 @@ Multi-user portal in front of lemlist so Blue PROP (Blue Property Group, South A
 - Sign-ups are invite-only: a trigger on `auth.users` rejects any email not pre-approved through `allow_signup()` (only the `admin-users` function calls it).
 - WhatsApp phone numbers are **encrypted** (`phone_enc`, pgp_sym with a Vault key `phone_encryption_key`; `phone_hash` HMAC for uniqueness). Write only via `set_number_phone()` (service role). Read only via `list_whatsapp_numbers()`. Never log full numbers — last 4 digits only.
 - lemlist returns a WhatsApp account's **profile name**, not its phone number, so admins enter each number once.
-- Only lemlist users connected in the portal are synced (currently Brett Eastwood, `usr_AiqYkmDHSr3zFu5Cg`). The lemlist workspace ("Fin-Link") also holds non-Blue-PROP campaigns and 2 existing webhooks: never modify those; only touch campaigns the portal created.
+- Only lemlist users connected in the portal are synced. **Production:** Blue PROP's 5 WhatsApp numbers sit under Gerrit Nel's lemlist user (`usr_a3ThpyZt4XhfgZHm8`) and are used by his sales team. **Development/testing:** only Brett Eastwood's lemlist user (`usr_AiqYkmDHSr3zFu5Cg`, one of those numbers) is connected.
+- Sales people (existing and new) are added per branch; each gets an Agent login and their own WhatsApp number in lemlist.
+- Blue PROP's older lemlist campaigns (e.g. Portobello Place, Homestead) are deliberately **not** imported — the portal only shows campaigns created through it.
+- Support alerts (number disconnected, linked elsewhere, licence missing, removed) go to Fin-Link developers, not the client: recipients live in `alert_recipients` (Fin-Link-only RLS), alerts in `alerts`; delivery by email/WhatsApp is a later stage. The lemlist workspace ("Fin-Link") also holds non-Blue-PROP campaigns and 2 existing webhooks: never modify those; only touch campaigns the portal created.
 - Project plan: the project value (R250,000, `settings.project_value`) is split across all items; prices must always total it. When a story is delivered, set it to `built` (client then signs off → `signed_off`).
 - Emails (invites, password resets, reminders) are deferred to a later stage; for now admins share temporary passwords.
 - Never put service-role, lemlist or Anthropic keys in front-end code or the repo. `.env` holds only the public URL and publishable key.

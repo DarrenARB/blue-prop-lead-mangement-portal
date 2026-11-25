@@ -7,7 +7,7 @@ import { Badge, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast }
 const SLOTS_PER_USER = 5;
 
 export default function Lemlist() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isFinLink } = useAuth();
   const toast = useToast();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -199,10 +199,102 @@ export default function Lemlist() {
         )}
       </section>
 
+      {isFinLink && <SupportAlerts />}
+
       {manage && <ManageUsers onClose={() => setManage(false)} onChanged={load} />}
       {editNumber && <EditNumber number={editNumber} agents={agents} numbers={numbers} onClose={() => setEditNumber(null)} onSaved={() => { setEditNumber(null); load(); toast("Number saved"); }} />}
       {reconnect && <Reconnect number={reconnect} onClose={() => setReconnect(null)} onSaved={() => { setReconnect(null); load(); toast("Reconnection recorded"); }} />}
     </>
+  );
+}
+
+const ALERT_KIND = {
+  disconnected: ["Disconnected", "bad"], linked_elsewhere: ["Linked elsewhere", "bad"], licence_missing: ["Licence missing", "warn"],
+  issue: ["Needs attention", "warn"], removed: ["Removed", "muted"], recovered: ["Back to normal", "ok"],
+};
+
+// Fin-Link only: who is told about number problems, and the alerts raised so far.
+function SupportAlerts() {
+  const toast = useToast();
+  const [recips, setRecips] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [add, setAdd] = useState({ channel: "email", value: "", label: "" });
+  const load = useCallback(async () => {
+    try {
+      setRecips(await supabase.from("alert_recipients").select("*").order("created_at").then(must));
+      setAlerts(await supabase.from("alerts").select("*").order("created_at", { ascending: false }).limit(10).then(must));
+    } catch (e) { toast(e.message, "bad"); }
+  }, [toast]);
+  useEffect(() => { load(); }, [load]);
+
+  async function addRecipient(e) {
+    e.preventDefault();
+    const value = add.value.trim();
+    if (!value) return;
+    const { error } = await supabase.from("alert_recipients").insert({ channel: add.channel, value, label: add.label.trim() || null });
+    if (error) return toast(error.code === "23505" ? "That recipient is already on the list." : error.message, "bad");
+    setAdd({ channel: "email", value: "", label: "" }); load();
+  }
+  async function toggle(r) {
+    const { error } = await supabase.from("alert_recipients").update({ active: !r.active }).eq("id", r.id);
+    if (error) return toast(error.message, "bad");
+    load();
+  }
+  async function remove(r) {
+    const { error } = await supabase.from("alert_recipients").delete().eq("id", r.id);
+    if (error) return toast(error.message, "bad");
+    load();
+  }
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h2>Support alerts</h2>
+          <p className="muted small">When a number disconnects, is linked elsewhere, loses its licence or is removed, an alert is raised for these people. Fin-Link only; the client doesn’t see this. Sending by email and WhatsApp is switched on in a later stage, so for now alerts are listed here.</p>
+        </div>
+      </div>
+      <div className="grid g2">
+        <div className="stack">
+          <h3>Who gets alerted</h3>
+          {!recips ? <Spinner /> : recips.length === 0 ? <p className="muted small">Nobody yet.</p> : (
+            <div className="table-wrap">
+              <table>
+                <tbody>
+                  {recips.map((r) => (
+                    <tr key={r.id} className={r.active ? "" : "dim"}>
+                      <td><div className="cell-title">{r.label || r.value}</div><div className="cell-sub">{r.channel === "email" ? "Email" : "WhatsApp"} · {r.value}</div></td>
+                      <td className="num">
+                        <div className="row" style={{ justifyContent: "flex-end" }}>
+                          <button className="btn btn-sm" onClick={() => toggle(r)}>{r.active ? "Pause" : "Resume"}</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => remove(r)}>Remove</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <form className="row" onSubmit={addRecipient} aria-label="Add alert recipient">
+            <select className="select" style={{ width: "auto" }} value={add.channel} onChange={(e) => setAdd({ ...add, channel: e.target.value })} aria-label="Channel">
+              <option value="email">Email</option><option value="whatsapp">WhatsApp</option>
+            </select>
+            <input className="input" style={{ flex: "1 1 180px" }} placeholder={add.channel === "email" ? "name@company.com" : "+27 82 555 0141"} value={add.value} onChange={(e) => setAdd({ ...add, value: e.target.value })} aria-label="Email or number" />
+            <input className="input" style={{ flex: "1 1 140px" }} placeholder="Name (optional)" value={add.label} onChange={(e) => setAdd({ ...add, label: e.target.value })} aria-label="Name" />
+            <button className="btn">Add</button>
+          </form>
+        </div>
+        <div className="stack">
+          <h3>Recent alerts</h3>
+          {alerts.length === 0 ? <p className="muted small">No alerts yet. Every number has been healthy since alerts were switched on.</p> : alerts.map((a) => (
+            <div key={a.id} className="money-row small">
+              <span><Badge tone={ALERT_KIND[a.kind]?.[1] ?? "muted"}>{ALERT_KIND[a.kind]?.[0] ?? a.kind}</Badge> {a.summary}<div className="cell-sub">{fmtDateTime(a.created_at)} · {a.delivery === "queued" ? "Queued: sending switched on later" : a.delivery}</div></span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

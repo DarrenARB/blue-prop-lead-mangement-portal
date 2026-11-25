@@ -262,7 +262,17 @@ Guardrails: never invent prices or listings, flag rather than act on ambiguous o
 
 ---
 
-## 9. Open decisions for Darren / Blue PROP
+## 9. Decisions (25 Nov 2026)
+
+- **Numbers:** Blue PROP's 5 WhatsApp numbers live under **Gerrit Nel's** lemlist user and are used by his team. Development and testing use **Brett Eastwood's** lemlist user (one of those numbers).
+- **People:** sales people per branch (existing and new) each get an Agent login and their own WhatsApp number in lemlist. There are no others yet.
+- **Support alerts** go to the Fin-Link developers, not the client: Darren Arbuckle (email and WhatsApp, set in the portal).
+- **Existing lemlist campaigns are not imported**; the portal only shows campaigns created through it.
+- **lemlist plan:** Multichannel Expert + WhatsApp add-on.
+- **Hosting:** Hostinger (static site).
+- **Emails** (invites, resets, reminders) are added in a later stage; temporary passwords until then.
+
+## 9b. Still open
 
 1. **Phone format** for lemlist leads (after test 3.4-1).
 2. **Which of the 4 numbers** belong to which agent. Gerrit's lemlist user holds 2 numbers; Brett and Chantal hold 1 each.

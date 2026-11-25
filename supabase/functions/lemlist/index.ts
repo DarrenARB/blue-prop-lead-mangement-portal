@@ -91,6 +91,27 @@ const label = (last4: string | null | undefined, id: string) => (last4 ? `number
 const isAdmin = (a: Actor) => a.role === "admin" || a.is_fin_link || a.role === "system";
 const canSeeNumbers = (a: Actor) => isAdmin(a) || a.role === "support";
 
+const STATUS_TEXT: Record<string, string> = {
+  ok: "is sending normally again", disconnected: "has disconnected", linked_elsewhere: "is linked on another device or account",
+  licence_missing: "has no lemlist WhatsApp licence", issue: "needs attention", removed: "was removed from lemlist",
+};
+
+// Raises a support alert to the active recipients. Delivery (email / WhatsApp) is switched on in a later stage,
+// so alerts are queued and shown in the portal for now.
+async function raiseAlert(numberId: string, last4: string | null | undefined, profile: string | null | undefined, from: string | null, to: string) {
+  if (from === to) return;
+  if (to === "ok" && (!from || from === "unknown")) return; // a healthy new number isn't news
+  const { data: recips } = await db.from("alert_recipients").select("channel, value, label").eq("active", true);
+  const who = last4 ? `WhatsApp number ending ${last4}` : `WhatsApp account “${profile ?? numberId}”`;
+  await db.from("alerts").insert({
+    number_id: numberId,
+    kind: to === "ok" ? "recovered" : to,
+    summary: `${who} ${STATUS_TEXT[to] ?? `changed to ${to}`}.`,
+    recipients: recips ?? [],
+    delivery: (recips ?? []).length ? "queued" : "not_needed",
+  });
+}
+
 async function sync(actor: Actor) {
   const now = new Date().toISOString();
   let senders: Sender[];
@@ -109,7 +130,7 @@ async function sync(actor: Actor) {
     if (!ids.has(s.userId)) continue; // only lemlist users connected to the portal are brought in
     await db.from("lemlist_users").update({ name: s.name ?? null, email: s.email ?? null, diagnostics: s.diagnostics ?? [], synced_at: now }).eq("id", s.userId);
     const wa = (s.channels ?? []).filter((c) => c.type === "whatsapp");
-    const { data: existing } = await db.from("whatsapp_numbers").select("id, status, phone_last4").eq("lemlist_user_id", s.userId);
+    const { data: existing } = await db.from("whatsapp_numbers").select("id, status, phone_last4, profile_label").eq("lemlist_user_id", s.userId);
     const prev = new Map((existing ?? []).map((n) => [n.id, n]));
     for (const ch of wa) {
       numbers++;
@@ -124,8 +145,10 @@ async function sync(actor: Actor) {
       if (before && before.status !== st) {
         await db.from("number_events").insert({ number_id: ch.id, kind: "status_change", from_status: before.status, to_status: st });
         changes.push(`${label(before.phone_last4, ch.id)}: ${before.status} → ${st}`);
+        await raiseAlert(ch.id, before.phone_last4, ch.label, before.status, st);
       } else if (!before) {
         changes.push(`new number ${ch.label ?? ch.id} on ${s.name}`);
+        if (st !== "ok") await raiseAlert(ch.id, null, ch.label, null, st);
       }
       prev.delete(ch.id);
     }
@@ -135,6 +158,7 @@ async function sync(actor: Actor) {
         await db.from("whatsapp_numbers").update({ status: "removed", status_changed_at: now, last_checked_at: now }).eq("id", gone.id);
         await db.from("number_events").insert({ number_id: gone.id, kind: "status_change", from_status: gone.status, to_status: "removed" });
         changes.push(`${label(gone.phone_last4, gone.id)}: removed from lemlist`);
+        await raiseAlert(gone.id, gone.phone_last4, gone.profile_label, gone.status, "removed");
       }
     }
   }
