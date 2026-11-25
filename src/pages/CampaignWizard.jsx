@@ -22,6 +22,7 @@ function useAutosave(value, saveFn, enabled, delay = 800) {
     latest.current.dirty = false;
     setState("saving");
     const ok = await latest.current.saveFn(latest.current.value);
+    if (ok === "invalid") { latest.current.dirty = true; setState("invalid"); return false; }
     setState(ok === false ? "error" : "saved");
     if (ok !== false) setSavedAt(new Date());
     return ok !== false;
@@ -54,6 +55,7 @@ function SaveDraft({ auto }) {
   const { state, savedAt, saveNow } = auto;
   const time = savedAt ? savedAt.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" }) : null;
   const text = state === "pending" ? "Unsaved changes" : state === "saving" ? "Saving…" : state === "error" ? "Couldn’t save. Check your connection and try again."
+    : state === "invalid" ? "Not saved yet: fix the problem above first"
     : time ? `✓ Draft saved at ${time}` : "Changes save automatically";
   async function click() { if (await saveNow()) toast("Draft saved. You can finish it later from Campaigns → Drafts."); }
   return (
@@ -61,7 +63,7 @@ function SaveDraft({ auto }) {
       <button type="button" className="btn btn-sm" onClick={click} disabled={state === "saving"}>
         <Icon d={ICONS.save} />Save draft
       </button>
-      <span className={`small ${state === "error" ? "t-bad" : state === "saved" || (time && state !== "pending") ? "t-ok" : "muted"}`} role="status">{text}</span>
+      <span className={`small ${state === "error" || state === "invalid" ? "t-bad" : state === "saved" || (time && state !== "pending") ? "t-ok" : "muted"}`} role="status">{text}</span>
     </span>
   );
 }
@@ -531,9 +533,13 @@ function WhatsAppPreview({ msgs, sample, agent }) {
 function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
   const d = ctx.settings;
   const [s, setS] = useState({ days: c.schedule?.days ?? d.window_days ?? [1, 2, 3, 4, 5], start: c.schedule?.start ?? d.window_start ?? "07:30", end: c.schedule?.end ?? d.window_end ?? "18:00", start_date: c.schedule?.start_date ?? "" });
-  const valid = s.days.length > 0 && s.start < s.end;
-  const today = new Date().toISOString().slice(0, 10);
-  const auto = useAutosave(s, (v) => (v.days.length && v.start < v.end ? save({ schedule: { ...v, timezone: d.timezone } }, true) : true), editable);
+  const today = localToday(d.timezone);
+  const maxDate = addYears(today, 1);
+  const dateProblem = dateIssue(s.start_date, today, maxDate);
+  const ok = (v) => v.days.length > 0 && v.start < v.end && !dateIssue(v.start_date, today, maxDate);
+  const valid = ok(s);
+  // a bad date is never saved: autosave waits until it's fixed
+  const auto = useAutosave(s, (v) => (ok(v) ? save({ schedule: { ...v, timezone: d.timezone } }, true) : "invalid"), editable);
   async function saveAndNext() {
     if (!valid) return;
     if (await save({ schedule: { ...s, timezone: d.timezone } }, true)) next();
@@ -556,15 +562,31 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
         <div className="grid g3">
           <Field label="From" id="sch-start"><input id="sch-start" className="input" type="time" value={s.start} onChange={(e) => setS({ ...s, start: e.target.value })} /></Field>
           <Field label="Until" id="sch-end"><input id="sch-end" className="input" type="time" value={s.end} onChange={(e) => setS({ ...s, end: e.target.value })} /></Field>
-          <Field label="Start on" id="sch-date" hint="Leave empty to start as soon as it launches."><input id="sch-date" className="input" type="date" min={today} value={s.start_date} onChange={(e) => setS({ ...s, start_date: e.target.value })} /></Field>
+          <Field label="Start on" id="sch-date" hint={s.start_date ? <>Can’t be before today. <button type="button" className="link-btn" onClick={() => setS({ ...s, start_date: "" })}>Clear date</button> to start as soon as it launches.</> : "Leave empty to start as soon as it launches."}>
+            <input id="sch-date" className={`input ${dateProblem ? "input-bad" : ""}`} type="date" min={today} max={maxDate} value={s.start_date} aria-invalid={!!dateProblem} onChange={(e) => setS({ ...s, start_date: e.target.value })} />
+          </Field>
         </div>
       </fieldset>
-      {!valid && <div className="note note-warn">{s.days.length ? "The end time must be after the start time." : "Pick at least one day."}</div>}
-      <p className="small muted">Each lead gets message 1, then message 2 {msgs[1]?.delay_days} days later and message 3 {msgs[2]?.delay_days} days after that, if they haven’t replied: about {total} days from first to last message.</p>
+      {!valid && <div className="note note-warn">{!s.days.length ? "Pick at least one day." : s.start >= s.end ? "The end time must be after the start time." : dateProblem}</div>}
+      <p className="small muted">Message 1 goes first. If the lead hasn’t replied, message 2 follows {daysText(msgs[1]?.delay_days)} later, then message 3 another {daysText(msgs[2]?.delay_days)} after that (about {daysText(total)} from first to last message).</p>
       <Nav back={back} next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!valid}>{editable && <SaveDraft auto={auto} />}</Nav>
     </section>
   );
 }
+
+// Dates are compared as YYYY-MM-DD in the company's time zone (South Africa), not the browser's or UTC.
+export function localToday(tz = "Africa/Johannesburg") {
+  return new Date().toLocaleDateString("en-CA", { timeZone: tz || "Africa/Johannesburg" });
+}
+function addYears(iso, n) { const [y, m, d] = iso.split("-"); return `${Number(y) + n}-${m}-${d}`; }
+function dateIssue(date, today, max) {
+  if (!date) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "That start date isn’t a valid date.";
+  if (date < today) return "The start date can’t be in the past. Pick today or a later date, or clear it to start as soon as it launches.";
+  if (max && date > max) return "The start date can’t be more than a year away.";
+  return null;
+}
+const daysText = (n) => { n = Number(n) || 0; return n === 1 ? "1 day" : `${n} days`; };
 
 // ---------- 5. Review ----------
 function StepReview({ c, ctx, msgs, editable, go, onDelete }) {
@@ -583,6 +605,8 @@ function StepReview({ c, ctx, msgs, editable, go, onDelete }) {
     { ok: ctx.leads > 0, label: ctx.leads ? `${ctx.leads.toLocaleString("en-ZA")} lead${ctx.leads === 1 ? "" : "s"} ready` : "No leads uploaded yet", step: 2 },
     { ok: msgProblem < 0, label: msgLabel, step: 3 },
     { ok: !!c.schedule?.days?.length, label: c.schedule?.days?.length ? `Sends ${c.schedule.days.map((d) => DAYS.find((x) => x[0] === d)?.[1]).join(", ")}, ${c.schedule.start}–${c.schedule.end}` : "Sending days and times not set", step: 4 },
+    // a start date that was fine when chosen can pass while the campaign waits as a draft
+    ...(c.schedule?.start_date ? [{ ok: c.schedule.start_date >= localToday(ctx.settings?.timezone), label: c.schedule.start_date >= localToday(ctx.settings?.timezone) ? `Starts on ${c.schedule.start_date}` : `Start date ${c.schedule.start_date} has passed. Pick a new one or clear it`, step: 4 }] : []),
   ];
   const ready = checks.every((x) => x.ok);
   return (
