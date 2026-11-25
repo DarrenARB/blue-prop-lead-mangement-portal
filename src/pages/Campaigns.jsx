@@ -39,6 +39,7 @@ export default function Campaigns() {
   const [error, setError] = useState(null);
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
+  const [dup, setDup] = useState(null);
   const [agentF, setAgentF] = useAgentFilter();
   const canCreate = isAdmin || profile.role === "agent";
 
@@ -46,7 +47,7 @@ export default function Campaigns() {
     (async () => {
       try {
         const [camps, leads, people] = await Promise.all([
-          supabase.from("campaigns").select("id, name, goal, status, wizard_step, agent_id, branch_id, updated_at, launched_at").order("updated_at", { ascending: false }).then(must),
+          supabase.from("campaigns").select("id, name, goal, status, wizard_step, agent_id, branch_id, updated_at, launched_at, brief, schedule, is_demo").order("updated_at", { ascending: false }).then(must),
           supabase.from("leads").select("campaign_id").then(must),
           supabase.from("profiles").select("id, full_name").then(must),
         ]);
@@ -108,7 +109,10 @@ export default function Campaigns() {
                   </div>
                   <div className="small muted">Step {step} of 5 · {STEP_NAMES[step - 1]} · saved {ago(c.updated_at)}</div>
                 </div>
-                <Link to={`/campaigns/${c.id}`} className="btn btn-primary btn-sm">Continue editing</Link>
+                <div className="row" style={{ gap: 6 }}>
+                  {canDuplicate(c, profile, isAdmin) && <button type="button" className="btn btn-sm" onClick={() => setDup(c)}><Icon d={ICONS.copy} />Duplicate</button>}
+                  <Link to={`/campaigns/${c.id}`} className="btn btn-primary btn-sm">Continue editing</Link>
+                </div>
               </div>
             );
           })}
@@ -116,7 +120,7 @@ export default function Campaigns() {
       ) : rows && (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Campaign</th>{profile.role !== "agent" && <th>Agent</th>}<th>Status</th><th className="num">Leads</th><th>{view === "live" ? "Launched" : "Last change"}</th></tr></thead>
+            <thead><tr><th>Campaign</th>{profile.role !== "agent" && <th>Agent</th>}<th>Status</th><th className="num">Leads</th><th>{view === "live" ? "Launched" : "Last change"}</th><th></th></tr></thead>
             <tbody>
               {shown.map((c) => (
                 <tr key={c.id}>
@@ -125,6 +129,7 @@ export default function Campaigns() {
                   <td><Badge tone={CAMPAIGN_STATUS[c.status]?.[1]}>{CAMPAIGN_STATUS[c.status]?.[0] ?? c.status}</Badge></td>
                   <td className="num">{c.leads.toLocaleString("en-ZA")}</td>
                   <td className="small">{ago(view === "live" ? c.launched_at ?? c.updated_at : c.updated_at)}</td>
+                  <td className="num">{canDuplicate(c, profile, isAdmin) && <button type="button" className="btn btn-sm" onClick={() => setDup(c)}><Icon d={ICONS.copy} />Duplicate</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -132,6 +137,7 @@ export default function Campaigns() {
         </div>
       )}
       {creating && <NewCampaign onClose={() => setCreating(false)} />}
+      {dup && <DuplicateCampaign campaign={dup} onClose={() => setDup(null)} />}
     </>
   );
 }
@@ -196,6 +202,73 @@ function NewCampaign({ onClose }) {
           </Field>
         )}
         {chosen && !chosen.hasNumber && <div className="note note-warn">{chosen.full_name} doesn’t have a WhatsApp number linked yet. You can build the draft now; link a number on lemlist &amp; numbers before it launches.</div>}
+      </form>
+    </Modal>
+  );
+}
+
+// ---------- Duplicate (AGT-11) ----------
+// Agents duplicate their own campaigns; admins any. Branch Owners can't create campaigns, so they can't duplicate.
+export const canDuplicate = (c, profile, isAdmin) => isAdmin || (profile.role === "agent" && c.agent_id === profile.id);
+
+// Copies the name, goal, brief, the three messages with their delays, and the sending days and hours into a new
+// draft. Leads aren't copied: upload a fresh list so every person goes through the Do Not Contact and Shotgun checks.
+export function DuplicateCampaign({ campaign, onClose }) {
+  const { profile, isAdmin } = useAuth();
+  const nav = useNavigate();
+  const [name, setName] = useState(`Copy of ${campaign.name}`.slice(0, 120));
+  const [agentId, setAgentId] = useState(isAdmin ? campaign.agent_id : profile.id);
+  const [agents, setAgents] = useState(isAdmin ? null : []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.from("profiles").select("id, full_name").eq("role", "agent").eq("status", "active").order("full_name").then(must)
+      .then((a) => { setAgents(a ?? []); if (!(a ?? []).some((x) => x.id === campaign.agent_id)) setAgentId(""); })
+      .catch(setError);
+  }, [isAdmin, campaign.agent_id]);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      if (!name.trim()) throw new Error("Give the copy a name.");
+      if (!agentId) throw new Error("Pick the agent whose number it sends from.");
+      const msgs = await supabase.from("campaign_messages").select("position, body, delay_days").eq("campaign_id", campaign.id).order("position").then(must);
+      const { start_date, ...schedule } = campaign.schedule ?? {}; // a start date belongs to the old campaign
+      const copy = await supabase.from("campaigns").insert({
+        name: name.trim(), goal: campaign.goal, agent_id: agentId, brief: campaign.brief ?? {}, schedule,
+        wizard_step: 2, is_demo: !!campaign.is_demo, // demo copies are cleared with the demo data
+      }).select("id").single().then(must);
+      const rows = [1, 2, 3].map((p) => {
+        const m = (msgs ?? []).find((x) => x.position === p);
+        return { campaign_id: copy.id, position: p, body: m?.body ?? "", delay_days: m?.delay_days ?? (p === 1 ? 0 : p === 2 ? 2 : 4) };
+      });
+      const { error: me } = await supabase.from("campaign_messages").insert(rows);
+      if (me) throw me;
+      nav(`/campaigns/${copy.id}`);
+    } catch (err) { setError(err); setBusy(false); }
+  }
+
+  return (
+    <Modal title="Duplicate campaign" sub="Copies the goal, the three messages and the sending days and hours into a new draft. Leads aren’t copied: upload a fresh list so everyone is checked against Do Not Contact and the Shotgun list." onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" form="dup-camp" disabled={busy}>{busy ? "Copying…" : "Create copy"}</button></>}>
+      <form id="dup-camp" className="stack" onSubmit={submit}>
+        <ErrorNote error={error} />
+        <Field label="Name of the copy" id="dup-name">
+          <input id="dup-name" className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoFocus />
+        </Field>
+        {isAdmin && (
+          <Field label="Sends from" id="dup-agent" hint="The agent’s own WhatsApp number is used.">
+            {!agents ? <Spinner /> : (
+              <select id="dup-agent" className="select" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+                <option value="">Choose an agent…</option>
+                {agents.map((a) => <option key={a.id} value={a.id}>{a.full_name}</option>)}
+              </select>
+            )}
+          </Field>
+        )}
       </form>
     </Modal>
   );

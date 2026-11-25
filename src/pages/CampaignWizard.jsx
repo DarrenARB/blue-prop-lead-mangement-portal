@@ -5,7 +5,7 @@ import { useAuth } from "../lib/auth";
 import { ADDRESS_FALLBACK, NUMBER_STATUS, contactAddress, fmtDateTime, fmtPhone } from "../lib/format";
 import { downloadCsv, guessField, parseCsv, readFile } from "../lib/csv";
 import { Badge, ErrorNote, Field, Icon, ICONS, Spinner, useToast } from "../components/ui";
-import { CAMPAIGN_STATUS, GOALS, viewOf } from "./Campaigns";
+import { CAMPAIGN_STATUS, DuplicateCampaign, GOALS, canDuplicate, viewOf } from "./Campaigns";
 
 const STEPS = ["Basics", "Leads", "Messages", "Schedule", "Review"];
 
@@ -84,6 +84,10 @@ const FIELD_OPTIONS = [["", "Don’t use"], ["phone", "Mobile number"], ["first_
 
 export default function CampaignWizard() {
   const { id } = useParams();
+  return <Wizard key={id} id={id} />; // a fresh wizard per campaign (e.g. after duplicating)
+}
+
+function Wizard({ id }) {
   const { profile, isAdmin } = useAuth();
   const toast = useToast();
   const nav = useNavigate();
@@ -93,6 +97,7 @@ export default function CampaignWizard() {
   const [error, setError] = useState(null);
   const [step, setStep] = useState(1);
   const started = useRef(false);
+  const [dup, setDup] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -158,7 +163,9 @@ export default function CampaignWizard() {
           <h1>{c.name} <Badge tone={CAMPAIGN_STATUS[c.status]?.[1]}>{CAMPAIGN_STATUS[c.status]?.[0]}</Badge></h1>
           {!editable && <p className="muted">{c.status === "draft" ? "You can view this draft but only its agent or an admin can change it." : "This campaign has launched, so it can’t be edited here."}</p>}
         </div>
+        {canDuplicate(c, profile, isAdmin) && <button className="btn" onClick={() => setDup(true)}><Icon d={ICONS.copy} />Duplicate</button>}
       </div>
+      {dup && <DuplicateCampaign campaign={c} onClose={() => setDup(false)} />}
 
       <ol className="wiz-steps" aria-label="Campaign steps">
         {STEPS.map((s, i) => (
