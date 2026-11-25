@@ -571,3 +571,14 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
 /* project plan: what's still left on an item */
 .left-todo { color: var(--bad, #B42318); font-size: 13px; margin-top: 4px; line-height: 1.4; }
 .left-todo strong { font-weight: 600; }
+
+/* Campaigns: tick campaigns, then the actions appear */
+.pick { width: 18px; height: 18px; accent-color: var(--brand); cursor: pointer; flex: none; }
+th.pick-col, td.pick-col { width: 40px; padding-right: 0; }
+.sel-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--navy); color: #fff; border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; position: sticky; top: 8px; z-index: 5; }
+.sel-bar .btn { background: #fff; }
+.sel-bar .btn-danger { background: #fff; }
+.sel-bar .btn-link { color: #fff; background: none; }
+tr.is-picked td { background: #EEF0FA; }
+.draft-card.is-picked { border-style: solid; border-color: var(--brand); background: #F7F8FD; }
+@media (max-width: 960px) { .sel-bar { top: 64px; } }
