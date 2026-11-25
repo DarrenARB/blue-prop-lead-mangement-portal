@@ -35,9 +35,12 @@ export function bucketDates(rows) {
     today: open.filter((d) => d.when === t),
     soon: open.filter((d) => d.when > t && d.when <= week),
     later: open.filter((d) => d.when > week),
-    done: rows.filter((d) => d.done_at && !d.yearly).sort((a, b) => b.done_at.localeCompare(a.done_at)).slice(0, 30),
+    done: rows.filter((d) => d.done_at && !d.yearly).sort((a, b) => b.done_at.localeCompare(a.done_at)).slice(0, 200),
   };
 }
+
+const TABS = [["overdue", "Overdue"], ["today", "Today"], ["soon", "Next 7 days"], ["later", "Later"], ["done", "Done"]];
+const EMPTY = { overdue: "Nothing overdue. Well done.", today: "Nothing due today.", soon: "Nothing in the next 7 days.", later: "Nothing scheduled further ahead." };
 
 export default function Dates() {
   const { profile, isAdmin } = useAuth();
@@ -61,6 +64,9 @@ export default function Dates() {
   }, []);
   useEffect(() => { load(); }, [load]);
   const b = useMemo(() => bucketDates((rows ?? []).filter((r) => !agentF || r.agent_id === agentF)), [rows, agentF]);
+  // One status per tab so a long list never has to be scrolled through. Opens on the most urgent tab with items.
+  const [tab, setTab] = useState(null);
+  const view = tab ?? (TABS.find(([k]) => k !== "done" && b[k].length)?.[0] ?? "today");
 
   async function done(d) {
     // yearly dates: mark this year's one done by moving the base date on a year
@@ -88,9 +94,8 @@ export default function Dates() {
     load();
   }
 
-  const Section = ({ title, list, tone, empty }) => (
+  const Section = ({ list, empty }) => (
     <section className="card stack">
-      <h2>{title} <Badge tone={tone}>{list.length}</Badge></h2>
       {list.length === 0 ? <p className="muted small">{empty}</p> : (
         <ul className="date-list">
           {list.map((d) => (
@@ -133,25 +138,30 @@ export default function Dates() {
       {!rows && !error ? <Spinner /> : rows && rows.length === 0 ? (
         <div className="card"><Empty title="Nothing scheduled">Set a follow-up from any conversation in the Inbox, or add a date here.</Empty></div>
       ) : rows && (
-        <div className="stack">
-          {b.overdue.length > 0 && <Section title="Overdue" list={b.overdue} tone="bad" empty="" />}
-          <Section title="Today" list={b.today} tone="brand" empty="Nothing due today." />
-          <Section title="Next 7 days" list={b.soon} tone="muted" empty="Nothing in the next week." />
-          {b.later.length > 0 && <Section title="Later" list={b.later} tone="muted" empty="" />}
-          {b.done.length > 0 && (
-            <details className="card"><summary><strong>Done recently</strong> <span className="muted small">({b.done.length})</span></summary>
-              <ul className="date-list" style={{ marginTop: 10 }}>
-                {b.done.map((d) => (
-                  <li key={d.id} className="date-item dim">
-                    <div className="date-when">{fmtDate(d.due_on)}</div>
-                    <div style={{ flex: 1 }}>{d.contact ? personName(d.contact) : d.title} · {DATE_TYPES[d.type]?.label}</div>
-                    {!readOnly && <div className="row"><button className="btn btn-sm btn-link" onClick={() => undo(d)}>Undo</button><button className="btn btn-sm btn-link" onClick={() => remove(d)}>Delete</button></div>}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
+        <>
+          <div className="tabs" role="tablist" aria-label="Dates by status">
+            {TABS.map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={view === k} className={`tab ${view === k ? "active" : ""} ${k === "overdue" && b.overdue.length ? "tab-alert" : ""}`} onClick={() => setTab(k)}>
+                {l} <span className="tab-n">{b[k].length}</span>
+              </button>
+            ))}
+          </div>
+          {view === "done" ? (
+            <section className="card stack">
+              {b.done.length === 0 ? <p className="muted small">Nothing marked done yet.</p> : (
+                <ul className="date-list">
+                  {b.done.map((d) => (
+                    <li key={d.id} className="date-item dim">
+                      <div className="date-when">{fmtDate(d.due_on)}<span className="cell-sub">done {fmtDate(d.done_at)}</span></div>
+                      <div style={{ flex: 1 }}>{d.contact ? personName(d.contact) : d.title} · {DATE_TYPES[d.type]?.label}{profile.role !== "agent" && <div className="cell-sub">{d.agent}</div>}</div>
+                      {!readOnly && <div className="row"><button className="btn btn-sm btn-link" onClick={() => undo(d)}>Undo</button><button className="btn btn-sm btn-link" onClick={() => remove(d)}>Delete</button></div>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : <Section list={b[view]} empty={EMPTY[view]} />}
+        </>
       )}
       {modal && <DateModal initial={modal.id ? modal : null} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); toast("Date saved"); }} />}
       {suggest && <SuggestModal d={suggest} onClose={() => setSuggest(null)} />}

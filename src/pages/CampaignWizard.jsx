@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
-import { ADDRESS_FALLBACK, NUMBER_STATUS, contactAddress, fmtDateTime } from "../lib/format";
+import { ADDRESS_FALLBACK, NUMBER_STATUS, contactAddress, fmtDateTime, fmtPhone } from "../lib/format";
 import { downloadCsv, guessField, parseCsv, readFile } from "../lib/csv";
 import { Badge, ErrorNote, Field, Icon, ICONS, Spinner, useToast } from "../components/ui";
 import { CAMPAIGN_STATUS, GOALS, viewOf } from "./Campaigns";
@@ -78,7 +78,7 @@ const PLACEHOLDERS = [
 ];
 const REJECT_LABEL = {
   invalid_number: "Not a valid mobile number", duplicate: "Repeated in the file", dnc: "On Do Not Contact",
-  shotgun: "Another agent messaged them recently (Shotgun list)", already_in_campaign: "Already in this campaign",
+  shotgun: "Already a lead of another agent in Blue PROP", already_in_campaign: "Already in this campaign",
 };
 const FIELD_OPTIONS = [["", "Don’t use"], ["phone", "Mobile number"], ["first_name", "First name"], ["last_name", "Surname"], ["full_name", "Full name"], ["suburb", "Suburb"], ["email", "Email"], ["unit", "Unit number"], ["complex", "Complex / estate"], ["street_number", "Street number"], ["street", "Street"]];
 
@@ -323,7 +323,7 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
               {Object.entries(last.rejected).map(([k, n]) => <li key={k}>{n.toLocaleString("en-ZA")} · {REJECT_LABEL[k] ?? k}</li>)}
             </ul>
             <button className="btn btn-sm" onClick={() => downloadRejections(last.id)}>Download the rows left out</button>
-            {last.rejected.shotgun ? <p className="small" style={{ marginTop: 6 }}>Shotgun contacts are held for the agent who messaged them first. An admin can release them from the Shotgun list.</p> : null}
+            {last.rejected.shotgun ? <HeldElsewhere uploadId={last.id} count={last.rejected.shotgun} /> : null}
           </>}
         </div>
       )}
@@ -332,7 +332,7 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
         <div className="dropzone">
           <input ref={inputRef} type="file" accept=".csv,text/csv,.txt" onChange={pick} className="sr-only" id="lead-file" />
           <label htmlFor="lead-file" className="btn btn-primary">{ctx.leads ? "Upload more leads" : "Choose a CSV file"}</label>
-          <p className="muted small">Up to 5,000 rows per file. We check every number against Do Not Contact and the Shotgun list before it’s added.</p>
+          <p className="muted small">Up to 5,000 rows per file. Every number is checked against Do Not Contact, and against leads other agents in Blue PROP already have, before it’s added.</p>
         </div>
       )}
 
@@ -375,6 +375,37 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
       )}
       <Nav back={back} next={next}>{editable && <SaveDraft auto={stored} />}</Nav>
     </section>
+  );
+}
+
+// People left out of an upload because they're already another agent's lead somewhere in Blue PROP.
+// Branches are parts of one company, so agents never compete for the same person.
+function HeldElsewhere({ uploadId, count }) {
+  const [rows, setRows] = useState(null);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    supabase.from("upload_rejections").select("row_no, phone_raw, name, detail").eq("upload_id", uploadId).eq("reason", "shotgun").order("row_no").limit(500)
+      .then(({ data }) => setRows(data ?? []));
+  }, [uploadId]);
+  if (!rows) return null;
+  const list = all ? rows : rows.slice(0, 8);
+  return (
+    <div className="held-box" role="status">
+      <strong>{count.toLocaleString("en-ZA")} {count === 1 ? "person is" : "people are"} already a lead elsewhere in Blue PROP</strong>
+      <p className="small" style={{ margin: "2px 0 8px" }}>So agents in different branches never contact the same person, they weren’t added. They’re listed on the Shotgun list, where a Main Admin (or your Branch Owner, if it’s the same branch) can move them to you.</p>
+      <table className="held-table">
+        <thead><tr><th>Who</th><th>Why they were left out</th></tr></thead>
+        <tbody>
+          {list.map((r) => (
+            <tr key={r.row_no}>
+              <td><div className="cell-title">{r.name || "No name"}</div><div className="cell-sub mono">{r.phone_raw ? fmtPhone(r.phone_raw) : ""} · row {r.row_no}</div></td>
+              <td className="small">{r.detail || "Already a lead of another agent"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > 8 && <button type="button" className="link-btn small" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${rows.length.toLocaleString("en-ZA")}`}</button>}
+    </div>
   );
 }
 

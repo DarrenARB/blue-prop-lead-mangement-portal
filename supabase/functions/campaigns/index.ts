@@ -1,4 +1,4 @@
-// campaigns: lead upload checks (format, duplicates, Do Not Contact, Shotgun list), AI message drafting with
+// campaigns: lead upload checks (format, duplicates, Do Not Contact, already a lead elsewhere in the company / Shotgun list), AI message drafting with
 // Claude Haiku, and bulk Do Not Contact. Nothing here writes to lemlist; launching is a separate step.
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 
@@ -111,22 +111,34 @@ async function processUpload(me: Me, body: any) {
   const existingIds = [...contactByPhone.values()].map((c) => c.id);
   // already in this campaign
   const inCampaign = new Set<string>();
-  // messaged by another agent within the cooldown (only campaigns that actually launched count)
+  // Already a lead of another agent anywhere in Blue PROP (any branch, draft or launched) within the cooldown.
+  // Branches are parts of one company, so two agents must never work the same person.
   const held = new Map<string, { agent_id: string; campaign_id: string; at: string }>();
   const since = new Date(); since.setMonth(since.getMonth() - months);
+  const sinceIso = since.toISOString();
   for (const part of chunk(existingIds, 300)) {
     const { data: mine } = await db.from("leads").select("contact_id").eq("campaign_id", campaign.id).in("contact_id", part);
     for (const l of mine ?? []) inCampaign.add(l.contact_id);
     const { data: others } = await db.from("leads")
-      .select("contact_id, agent_id, campaign_id, created_at, last_event_at, campaigns!inner(launched_at)")
+      .select("contact_id, agent_id, campaign_id, created_at, last_event_at, state")
       .in("contact_id", part).neq("agent_id", campaign.agent_id)
-      .not("campaigns.launched_at", "is", null)
-      .gte("created_at", since.toISOString());
+      .not("state", "in", "(stopped,removed)");
     for (const l of (others ?? []) as any[]) {
       const at = l.last_event_at ?? l.created_at;
+      if (at < sinceIso) continue; // cooldown over: free again
       const prev = held.get(l.contact_id);
       if (!prev || at > prev.at) held.set(l.contact_id, { agent_id: l.agent_id, campaign_id: l.campaign_id, at });
     }
+  }
+  // who holds them, so the uploader is told exactly where the lead sits
+  const holderIds = [...new Set([...held.values()].map((h) => h.agent_id))];
+  const holderInfo = new Map<string, string>();
+  if (holderIds.length) {
+    const { data: hp } = await db.from("profiles").select("id, full_name, branch_id").in("id", holderIds);
+    const bIds = [...new Set((hp ?? []).map((p: any) => p.branch_id).filter(Boolean))];
+    const { data: bs } = bIds.length ? await db.from("branches").select("id, name").in("id", bIds) : { data: [] };
+    const bn = new Map((bs ?? []).map((b: any) => [b.id, b.name]));
+    for (const p of (hp ?? []) as any[]) holderInfo.set(p.id, `${p.full_name}${bn.get(p.branch_id) ? ` (${bn.get(p.branch_id)} branch)` : ""}`);
   }
 
   const toAdd: typeof good = [];
@@ -140,7 +152,7 @@ async function processUpload(me: Me, body: any) {
     const h = existing ? held.get(existing.id) : undefined;
     if (h) {
       const free = new Date(h.at); free.setMonth(free.getMonth() + months);
-      rejections.push({ row_no: g.row_no, phone_raw: g.phone, name, reason: "shotgun", detail: `Messaged by another agent; free from ${free.toISOString().slice(0, 10)}` });
+      rejections.push({ row_no: g.row_no, phone_raw: g.phone, name, reason: "shotgun", detail: `Already a lead of ${holderInfo.get(h.agent_id) ?? "another agent"}; free from ${free.toISOString().slice(0, 10)} unless it’s moved to you on the Shotgun list` });
       shotgunRows.push({ contact_id: existing.id, holder_agent_id: h.agent_id, holder_campaign_id: h.campaign_id, last_contacted_at: h.at, tried_agent_id: campaign.agent_id, tried_campaign_id: campaign.id, free_from: free.toISOString().slice(0, 10) });
       continue;
     }

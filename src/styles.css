@@ -255,7 +255,7 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 
 /* ---------- tabs ---------- */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; overflow-x: auto; }
-.tab { min-height: 44px; padding: 0 16px; border: 0; background: none; font-weight: 500; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
+.tab { min-height: 44px; padding: 0 16px; border: 0; background: none; font-weight: 500; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 8px; }
 .tab:hover { color: var(--ink); }
 .tab.on { color: var(--brand); border-bottom-color: var(--brand); }
 .tab-n { font-size: 12px; background: var(--soft); color: var(--muted); border-radius: 999px; padding: 1px 8px; }
@@ -557,3 +557,13 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
 .group-row td { background: #F2F4FB; color: var(--brand); font-size: 13px; font-weight: 600; padding: 8px 12px; }
 .row-review td { background: #FFF8EC; }
 .row-review td:first-child { box-shadow: inset 3px 0 0 var(--warn, #B54708); }
+
+/* upload: people already a lead elsewhere in the company */
+.held-box { margin-top: 10px; background: #fff; border: 1px solid #F0C48A; border-radius: 10px; padding: 10px 12px; color: var(--ink, #1d2240); }
+.held-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.held-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.held-table td { padding: 6px; border-bottom: 1px solid #f0f1f6; vertical-align: top; }
+
+.tab.tab-alert { color: var(--bad); }
+.tab.tab-alert .tab-n { background: var(--bad); color: #fff; }
+@media (max-width: 600px) { .tab { padding: 0 10px; gap: 6px; } }

@@ -28,7 +28,6 @@ export default function Dnc() {
   const [error, setError] = useState(null);
   const [q, setQ] = useState("");
   const [modal, setModal] = useState(null); // 'add' | 'bulk' | {remove: row}
-  const [onlyReview, setOnlyReview] = useState(false);
   const mayRemove = (r) => canBulk || r.source === "ai_opt_out" || r.added_by === profile.id; // the server makes the final check
   async function confirmAi(r) {
     const { error } = await supabase.rpc("confirm_dnc", { p_id: r.id });
@@ -47,11 +46,10 @@ export default function Dnc() {
     const t = q.trim().toLowerCase();
     const digits = t.replace(/\D/g, "");
     const match = (r) => !t || (r.name ?? "").toLowerCase().includes(t) || (r.email ?? "").toLowerCase().includes(t) || (digits.length >= 3 && r.phone_e164.replace(/\D/g, "").includes(digits.replace(/^0/, "")));
-    return (rows ?? []).filter((r) => (!onlyReview || r.needs_review) && match(r))
+    return (rows ?? []).filter((r) => match(r))
       .sort((a, b) => (b.needs_review ? 1 : 0) - (a.needs_review ? 1 : 0));
-  }, [rows, q, onlyReview]);
+  }, [rows, q]);
   const firstChecked = shown.findIndex((r) => !r.needs_review);
-  const review = (rows ?? []).filter((r) => r.needs_review).length;
 
   function exportCsv() {
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -72,12 +70,6 @@ export default function Dnc() {
           <button className="btn btn-primary" onClick={() => setModal("add")}><Icon d={ICONS.plus} />Add number</button>
         </div>
       </div>
-      {review > 0 && (
-        <div className="note note-warn row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-          <span><strong>{review} added by the AI</strong> from replies like “not interested” or “stop”. Check {review > 1 ? "them" : "it"}: keep {review > 1 ? "them" : "it"}, or undo if the AI got it wrong.</span>
-          <button className="btn btn-sm" onClick={() => setOnlyReview(!onlyReview)}>{onlyReview ? "Show everyone" : "Show only these"}</button>
-        </div>
-      )}
       <div className="filters">
         <input className="input" type="search" placeholder="Search by name or number" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search Do Not Contact" style={{ maxWidth: 320 }} />
         <span className="muted small">{rows ? `${shown.length.toLocaleString("en-ZA")} of ${rows.length.toLocaleString("en-ZA")}` : ""}</span>
