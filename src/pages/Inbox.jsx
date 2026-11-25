@@ -187,10 +187,6 @@ function Thread({ conv, threshold, onBack, onChanged }) {
         ))}
       </div>
 
-      <div className="thread-reply">
-        <input className="input" disabled placeholder="Reply from WhatsApp on your phone" aria-label="Replying isn’t available in the portal" />
-        <button className="btn" onClick={() => notReady(toast, "Replying from the portal")}>Send</button>
-      </div>
 
       {canAct && (
         <div className="thread-actions" role="group" aria-label="What to do with this lead">

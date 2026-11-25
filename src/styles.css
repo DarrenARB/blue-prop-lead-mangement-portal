@@ -351,7 +351,6 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .score-card.tone-ok { background: var(--orangebg); }
 .score-card.tone-ok .score-num { border-color: var(--orange); color: var(--orange-d); }
 .score-card.tone-warn .score-num { border-color: #E3B341; color: var(--warn); }
-.thread-reply { display: flex; gap: 8px; }
 .thread-actions { flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
 @media (max-width: 900px) {
   .inbox { grid-template-columns: 1fr; }
