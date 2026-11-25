@@ -5,6 +5,7 @@ import { ago, fmtDateTime, fmtPhone } from "../lib/format";
 import { Badge, CopyButton, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
 import { DATE_TYPES } from "./Dates";
 import ReasonPicker, { DNC_ADD_REASONS } from "../components/ReasonPicker";
+import ContactPicker from "../components/ContactPicker";
 import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
 
 // The full back-and-forth with a lead. Long chats scroll inside the box (the page doesn't grow forever),
@@ -296,8 +297,11 @@ function DncFromConv({ conv, onClose, onDone }) {
 }
 
 export function DateModal({ conv, initial, onClose, onDone }) {
+  const { profile, isAdmin } = useAuth();
   const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-  const [f, setF] = useState({ type: initial?.type ?? "followup", due_on: initial?.due_on ?? tomorrow, note: initial?.note ?? "", title: initial?.title ?? "", yearly: initial?.yearly ?? false });
+  const [f, setF] = useState({ type: initial?.type ?? "followup", type_label: initial?.type_label ?? "", due_on: initial?.due_on ?? tomorrow, note: initial?.note ?? "", yearly: initial?.yearly ?? false });
+  // who it's for: always one of your leads, picked from a search (never typed by hand)
+  const [person, setPerson] = useState(initial?.contact ? { ...initial.contact, id: initial.contact_id, agent_id: initial.agent_id } : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
@@ -305,11 +309,22 @@ export function DateModal({ conv, initial, onClose, onDone }) {
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      if (!conv && !initial?.contact_id && !f.title.trim()) throw new Error("Say who this is for.");
-      const row = { type: f.type, due_on: f.due_on, note: f.note.trim() || null, yearly: ["birthday", "anniversary"].includes(f.type) ? true : f.yearly, title: f.title.trim() || null };
+      if (!conv && !person) throw new Error("Pick who this is for from your leads.");
+      if (f.type === "other" && !f.type_label.trim()) throw new Error("Say what the date is for, e.g. “Transfer registered”.");
+      const row = { type: f.type, due_on: f.due_on, note: f.note.trim() || null, yearly: ["birthday", "anniversary"].includes(f.type) ? true : f.yearly };
+      row.type_label = f.type === "other" ? f.type_label.trim() : null;
+      if (row.type_label === null && !initial?.type_label) delete row.type_label; // keeps working before the type_label column exists
+      let who = {};
+      if (conv) who = { agent_id: conv.agent_id, contact_id: conv.contact_id, conversation_id: conv.id };
+      else if (person && person.id !== initial?.contact_id) {
+        // the date goes to the agent whose lead this is (an agent's own dates are always theirs)
+        const agentId = !isAdmin ? profile.id : person.agent_id ?? profile.id;
+        const { data: cv } = await supabase.from("conversations").select("id").eq("contact_id", person.id).eq("agent_id", agentId).maybeSingle();
+        who = { agent_id: agentId, contact_id: person.id, conversation_id: cv?.id ?? null, title: null };
+      }
       const q = initial?.id
-        ? supabase.from("key_dates").update(row).eq("id", initial.id)
-        : supabase.from("key_dates").insert({ ...row, ...(conv ? { agent_id: conv.agent_id, contact_id: conv.contact_id, conversation_id: conv.id } : {}) });
+        ? supabase.from("key_dates").update({ ...row, ...who }).eq("id", initial.id)
+        : supabase.from("key_dates").insert({ ...row, ...who });
       const { error } = await q;
       if (error) throw error;
       onDone();
@@ -320,12 +335,22 @@ export function DateModal({ conv, initial, onClose, onDone }) {
       footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" form="date-f" disabled={busy}>{busy ? "Saving…" : "Save"}</button></>}>
       <form id="date-f" className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
-        {!conv && !initial?.contact_id && <Field label="Who is it for?" id="d-title"><input id="d-title" className="input" value={f.title} onChange={set("title")} placeholder="e.g. Sipho Ndlovu, 7 Oak Lane" /></Field>}
+        {!conv && (
+          <Field label="Who is it for?" id="d-who" hint={!person && initial?.title ? `Saved before as “${initial.title}”. Pick the person from your leads.` : "Search your leads by name, number, email or suburb."}>
+            <ContactPicker id="d-who" value={person} onChange={setPerson} autoFocus={!initial?.id} showAgent={isAdmin}
+              dncLabel="On Do Not Contact" emptyText="Nobody in your leads matches. Check the spelling." />
+          </Field>
+        )}
         <Field label="Type" id="d-type">
           <select id="d-type" className="select" value={f.type} onChange={set("type")}>
             {Object.entries(DATE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </Field>
+        {f.type === "other" && (
+          <Field label="What is it?" id="d-label" hint="Shown as the type on Dates and Home.">
+            <input id="d-label" className="input" value={f.type_label} onChange={set("type_label")} maxLength={60} placeholder="e.g. Transfer registered, Bond approval, Viewing" autoFocus required />
+          </Field>
+        )}
         <Field label="Date" id="d-date"><input id="d-date" className="input" type="date" value={f.due_on} onChange={set("due_on")} required /></Field>
         <Field label="Note" id="d-note"><input id="d-note" className="input" value={f.note} onChange={set("note")} placeholder="e.g. Call back about the Saturday valuation" /></Field>
         {["birthday", "anniversary"].includes(f.type)

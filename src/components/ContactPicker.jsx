@@ -4,7 +4,7 @@ import { fmtPhone } from "../lib/format";
 
 // Type a name, number, email or suburb and pick the exact person from the people you're talking to.
 // Agents see their own leads and conversations; admins see everyone.
-export default function ContactPicker({ id = "cp", value, onChange, autoFocus }) {
+export default function ContactPicker({ id = "cp", value, onChange, autoFocus, dncLabel = "Already on the list", emptyText = "Nobody matches. Check the spelling, or enter the number by hand below.", showAgent = false }) {
   const [q, setQ] = useState("");
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
@@ -44,7 +44,7 @@ export default function ContactPicker({ id = "cp", value, onChange, autoFocus })
       <div className="picked">
         <div>
           <div className="cell-title">{name(value)}</div>
-          <div className="cell-sub">{[fmtPhone(value.phone_e164), value.email, value.suburb].filter(Boolean).join(" · ")}</div>
+          <div className="cell-sub">{[value.phone_e164 ? fmtPhone(value.phone_e164) : null, value.email, value.suburb, showAgent && value.agent_name ? `${value.agent_name}’s lead` : null].filter(Boolean).join(" · ")}</div>
         </div>
         <button type="button" className="btn btn-sm" onClick={() => onChange(null)}>Change</button>
       </div>
@@ -62,16 +62,16 @@ export default function ContactPicker({ id = "cp", value, onChange, autoFocus })
       {busy && <span className="ac-busy" aria-hidden="true" />}
       {open && (
         <ul id={`${id}-list`} className="ac-list" role="listbox">
-          {items.length === 0 && <li className="ac-empty">Nobody matches. Check the spelling, or enter the number by hand below.</li>}
+          {items.length === 0 && <li className="ac-empty">{emptyText}</li>}
           {items.map((c, i) => (
             <li key={c.id} id={`${id}-opt-${i}`} role="option" aria-selected={i === active} aria-disabled={c.on_dnc}
               className={`${i === active ? "on" : ""} ${c.on_dnc ? "dim" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); choose(c); }} onMouseEnter={() => setActive(i)}>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span className="cell-title">{name(c)}</span>
-                <span className="cell-sub" style={{ display: "block" }}>{[fmtPhone(c.phone_e164), c.email, c.suburb].filter(Boolean).join(" · ")}</span>
+                <span className="cell-sub" style={{ display: "block" }}>{[fmtPhone(c.phone_e164), c.email, c.suburb, showAgent && c.agent_name ? `${c.agent_name}’s lead` : null].filter(Boolean).join(" · ")}</span>
               </span>
-              {c.on_dnc && <span className="badge b-muted">Already on the list</span>}
+              {c.on_dnc && <span className="badge b-muted">{dncLabel}</span>}
             </li>
           ))}
         </ul>

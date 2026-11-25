@@ -13,6 +13,8 @@ export const DATE_TYPES = {
   lease: { label: "Lease ending", tone: "warn" },
   other: { label: "Other", tone: "muted" },
 };
+// "Other" dates show the label the agent typed (e.g. "Transfer registered")
+export const typeLabel = (d) => (d.type === "other" && d.type_label ? d.type_label : DATE_TYPES[d.type]?.label);
 const iso = (d) => d.toISOString().slice(0, 10);
 const todayIso = () => iso(new Date(Date.now() + 2 * 3600e3)); // South African date
 
@@ -102,7 +104,7 @@ export default function Dates() {
             <li key={d.id} className="date-item">
               <div className="date-when"><strong>{fmtDate(d.when)}</strong>{d.yearly && <span className="cell-sub">Every year</span>}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="cell-title">{d.contact ? personName(d.contact) : d.title || "—"} <Badge tone={DATE_TYPES[d.type]?.tone}>{DATE_TYPES[d.type]?.label}</Badge></div>
+                <div className="cell-title">{d.contact ? personName(d.contact) : d.title || "—"} <Badge tone={DATE_TYPES[d.type]?.tone}>{typeLabel(d)}</Badge></div>
                 {d.note && <div className="cell-sub">{d.note}</div>}
                 {profile.role !== "agent" && <div className="cell-sub">{d.agent}</div>}
               </div>
@@ -153,7 +155,7 @@ export default function Dates() {
                   {b.done.map((d) => (
                     <li key={d.id} className="date-item dim">
                       <div className="date-when">{fmtDate(d.due_on)}<span className="cell-sub">done {fmtDate(d.done_at)}</span></div>
-                      <div style={{ flex: 1 }}>{d.contact ? personName(d.contact) : d.title} · {DATE_TYPES[d.type]?.label}{profile.role !== "agent" && <div className="cell-sub">{d.agent}</div>}</div>
+                      <div style={{ flex: 1 }}>{d.contact ? personName(d.contact) : d.title} · {typeLabel(d)}{profile.role !== "agent" && <div className="cell-sub">{d.agent}</div>}</div>
                       {!readOnly && <div className="row"><button className="btn btn-sm btn-link" onClick={() => undo(d)}>Undo</button><button className="btn btn-sm btn-link" onClick={() => remove(d)}>Delete</button></div>}
                     </li>
                   ))}
