@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
-import { useAuth } from "../lib/auth";
+import { forceSignOut, isSessionGone, useAuth } from "../lib/auth";
 import AuthShell from "../components/AuthShell";
 import { ErrorNote, Field, PasswordInput, useToast } from "../components/ui";
 
@@ -11,6 +11,7 @@ export default function ChangePassword({ forced }) {
   const [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [expired, setExpired] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -20,11 +21,29 @@ export default function ChangePassword({ forced }) {
     if (/^Bp-/.test(pw)) return setError("Choose your own password, not the temporary one.");
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: pw });
-    if (error) { setBusy(false); return setError(error.message); }
+    if (error) {
+      setBusy(false);
+      if (isSessionGone(error)) {
+        setExpired(true);
+        return;
+      }
+      return setError(error.message);
+    }
     await supabase.rpc("mark_password_changed");
     await refreshProfile();
     setBusy(false); setPw(""); setPw2("");
     toast("Password changed");
+  }
+
+  if (expired) {
+    const box = (
+      <div className={forced ? "auth-card" : "card stack"} style={forced ? undefined : { maxWidth: 480 }}>
+        <h2>Please sign in again</h2>
+        <p className="muted">This login was ended, usually because the password was reset after you signed in. Sign in with the most recent temporary password you were given, then choose your own.</p>
+        <button className="btn btn-primary" onClick={forceSignOut}>Back to sign in</button>
+      </div>
+    );
+    return forced ? <AuthShell>{box}</AuthShell> : box;
   }
 
   const form = (

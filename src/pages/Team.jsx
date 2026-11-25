@@ -43,7 +43,10 @@ export default function Team() {
   async function runPersonAction(action, person) {
     try {
       const out = await callFn("admin-users", { action, id: person.id });
-      if (action === "reset_password") setSecret({ name: person.full_name, email: person.email, password: out.temp_password, kind: "reset" });
+      if (action === "reset_password") {
+        if (!out?.temp_password) throw new Error("The password was reset but the new one didn’t come back. Try Reset password again.");
+        setSecret({ name: person.full_name, email: person.email, password: out.temp_password, kind: "reset" });
+      }
       else toast(action === "deactivate" ? `${person.full_name} deactivated` : `${person.full_name} reactivated`);
       setConfirm(null); load();
     } catch (e) { toast(e.message, "bad"); }
@@ -91,7 +94,7 @@ export default function Team() {
                       {!locked && (
                         <div className="row" style={{ justifyContent: "flex-end" }}>
                           {p.status === "active" && <button className="btn btn-sm" onClick={() => setPersonModal({ mode: "edit", person: p })}>Edit</button>}
-                          {p.status === "active" && <button className="btn btn-sm" onClick={() => setConfirm({ action: "reset_password", person: p })}>Reset password</button>}
+                          {p.status === "active" && p.id !== me.id && <button className="btn btn-sm" onClick={() => setConfirm({ action: "reset_password", person: p })}>Reset password</button>}
                           {p.id !== me.id && (p.status === "active"
                             ? <button className="btn btn-sm btn-danger" onClick={() => setConfirm({ action: "deactivate", person: p })}>Deactivate</button>
                             : <button className="btn btn-sm" onClick={() => runPersonAction("reactivate", p)}>Reactivate</button>)}
@@ -115,7 +118,7 @@ export default function Team() {
           onClose={() => setPersonModal(null)}
           onSaved={(out) => {
             setPersonModal(null); load();
-            if (out?.temp_password) setSecret({ ...out, kind: "invite" });
+            if (out?.temp_password) setSecret({ name: out.name, email: out.email, password: out.temp_password, kind: "invite" });
             else toast("Changes saved");
           }}
         />
@@ -270,8 +273,15 @@ function PersonModal({ mode, person, data, me, onClose, onSaved }) {
 
 function SecretModal({ secret, onClose }) {
   const url = window.location.origin + window.location.pathname;
+  if (!secret.password) {
+    return (
+      <Modal title="The temporary password didn’t come through" onClose={onClose} footer={<button className="btn btn-primary" onClick={onClose}>OK</button>}>
+        <p>{secret.name ? `${secret.name}’s account is set up, ` : "The account is set up, "}but the password wasn’t shown. Use <strong>Reset password</strong> on their row to get a new one.</p>
+      </Modal>
+    );
+  }
   const message =
-    `Hi ${secret.name.split(" ")[0]}, ${secret.kind === "invite" ? "your Blue PROP WhatsApp Portal login is ready" : "your Blue PROP WhatsApp Portal password has been reset"}.\n\n` +
+    `Hi ${(secret.name || "there").split(" ")[0]}, ${secret.kind === "invite" ? "your Blue PROP WhatsApp Portal login is ready" : "your Blue PROP WhatsApp Portal password has been reset"}.\n\n` +
     `Sign in at: ${url}\nEmail: ${secret.email}\nTemporary password: ${secret.password}\n\nYou’ll be asked to choose your own password when you sign in.`;
   return (
     <Modal

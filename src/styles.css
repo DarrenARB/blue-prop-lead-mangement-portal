@@ -228,7 +228,7 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .bm-icon { background: none; border: 0; }
 .bm-pin { width: 38px; height: 38px; border-radius: 50% 50% 50% 6px; transform: rotate(-45deg); background: var(--pin); border: 3px solid #fff; box-shadow: 0 4px 10px rgba(12,15,36,.3); display: grid; place-items: center; margin: 2px 1px 0; transition: transform .15s; }
 .bm-pin svg { width: 19px; height: 19px; transform: rotate(45deg); fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.bm-sel { transform: rotate(-45deg) scale(1.18); box-shadow: 0 0 0 4px rgba(27,72,155,.25), 0 6px 14px rgba(12,15,36,.35); }
+.bm-pin.bm-sel { transform: rotate(-45deg) scale(1.18); box-shadow: 0 0 0 4px rgba(27,72,155,.25), 0 6px 14px rgba(12,15,36,.35); }
 @media (prefers-reduced-motion: reduce) { .bm-pin { transition: none; } }
 
 /* pickers */
@@ -288,7 +288,6 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .t-bad { color: var(--bad); font-weight: 600; }
 .row.spread, .spread { justify-content: space-between; }
-.pick.bm-sel { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); background: #F2F4FB; }
 
 /* ---------- campaign wizard ---------- */
 .wiz-steps { list-style: none; margin: 0 0 18px; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
@@ -388,3 +387,29 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
 .foot-btn { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: #C9D3E3; background: none; border: 0; flex: none; }
 .foot-btn:hover, .foot-btn.active { background: rgba(255,255,255,.1); color: #fff; }
 .foot-btn:focus-visible { outline: 3px solid var(--orange); outline-offset: 1px; }
+
+/* goal options in the new-campaign form (text cards, never transformed) */
+.goal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.goal-opt { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #CBD3E0; border-radius: 12px; cursor: pointer; background: #fff; min-height: 44px; }
+.goal-opt input { margin: 3px 0 0; accent-color: var(--brand); flex: none; }
+.goal-opt .goal-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.goal-opt:hover { border-color: #9AA4D0; }
+.goal-opt.on { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); background: #F2F4FB; }
+.goal-opt:has(input:focus-visible) { outline: 3px solid var(--orange); outline-offset: 2px; }
+
+/* ---------- layout fixes from the screen-by-screen check ---------- */
+.modal-head .icon-btn { flex: none; }
+/* tables keep readable columns on phones and scroll sideways inside their box instead of squashing */
+@media (max-width: 760px) {
+  .table-wrap table { min-width: 640px; }
+  .banner { flex-wrap: wrap; }
+  .banner > .btn { margin-left: 34px; }
+  .date-when { width: auto; flex-basis: 100%; flex-direction: row; gap: 8px; align-items: baseline; }
+}
+/* unread-replies circle on Inbox */
+.nb-unread { background: var(--orange); color: #fff; box-shadow: 0 0 0 2px var(--navy); }
+.nav .nb-unread { min-width: 22px; height: 22px; border-radius: 999px; }
+/* short pages must not stretch the phone top bar */
+.shell { align-content: start; }
+@media (max-width: 760px) { .banner > div { flex: 1 1 220px; } }
+.banner-text { flex: 1 1 220px; min-width: 0; }

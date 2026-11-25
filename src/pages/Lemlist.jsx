@@ -71,7 +71,7 @@ export default function Lemlist() {
       {!isOwnerView && needPhone.length > 0 && (
         <div className="banner" role="alert" style={{ alignItems: "center" }}>
           <Icon d={ICONS.alert} />
-          <div style={{ flex: 1 }}>
+          <div className="banner-text">
             <strong>{needPhone.length === 1 ? "1 WhatsApp number needs its phone number" : `${needPhone.length} WhatsApp numbers need their phone numbers`}.</strong>
             <div className="small">lemlist only shares the profile name, so enter each number once. It can’t be linked to an agent until you do. Numbers are stored encrypted.</div>
           </div>

@@ -113,7 +113,7 @@ export default function Plan() {
       {gap !== 0 && (
         <div className="banner" role="alert" style={{ alignItems: "center" }}>
           <Icon d={ICONS.alert} />
-          <div style={{ flex: 1 }}>
+          <div className="banner-text">
             <strong>The line items add up to {fmtR(t.total)}, which is {fmtR(Math.abs(gap))} {gap > 0 ? "less" : "more"} than the {fmtR(projectValue)} project value.</strong>
             <div className="small">Every story and component gets a share of the project value. Adjust item prices until nothing is left over{t.unpriced ? `; ${t.unpriced} item${t.unpriced > 1 ? "s have" : " has"} no price yet` : ""}.</div>
           </div>

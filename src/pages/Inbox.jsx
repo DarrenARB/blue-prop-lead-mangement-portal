@@ -59,6 +59,7 @@ export default function Inbox() {
       return toast(error.message, "bad");
     }
     toast(load_ ? "Sample conversations loaded" : "Sample conversations cleared");
+    window.dispatchEvent(new Event("bp:counts-changed"));
     setOpenId(null); load();
   }
 
@@ -135,7 +136,7 @@ function Thread({ conv, threshold, onBack, onChanged }) {
   useEffect(() => {
     supabase.from("messages").select("*").eq("conversation_id", conv.id).order("sent_at").then(must).then(setMsgs).catch((e) => toast(e.message, "bad"));
     supabase.from("ai_scores").select("score, reason, scored_at, model").eq("conversation_id", conv.id).order("scored_at", { ascending: false }).limit(5).then(must).then(setScores).catch(() => {});
-    if (conv.unread && canAct) supabase.from("conversations").update({ unread: false }).eq("id", conv.id).then(() => onChanged());
+    if (conv.unread && canAct) supabase.from("conversations").update({ unread: false }).eq("id", conv.id).then(() => { onChanged(); window.dispatchEvent(new Event("bp:counts-changed")); });
   }, [conv.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function rescore() {

@@ -66,6 +66,7 @@ export default function Dates() {
     const { error } = await supabase.from("key_dates").update(fields).eq("id", d.id);
     if (error) return toast(error.message, "bad");
     toast(d.yearly ? "Done. See you next year." : "Marked as done"); load();
+    window.dispatchEvent(new Event("bp:counts-changed"));
   }
   async function snooze(d, days) {
     const until = iso(new Date(new Date(d.when).getTime() + days * 864e5));

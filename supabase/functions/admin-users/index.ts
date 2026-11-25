@@ -229,6 +229,8 @@ Deno.serve(async (req) => {
 
     // ---------- Reset password ----------
     if (action === "reset_password") {
+      // Resetting a password ends that account's sessions, so resetting your own would lock you out mid-session.
+      if (me.id && target.id === me.id) throw new HttpError(400, "You can’t reset your own password here. Use Change password instead.");
       const password = tempPassword();
       const { error } = await db.auth.admin.updateUserById(target.id, { password });
       if (error) throw new HttpError(400, error.message);

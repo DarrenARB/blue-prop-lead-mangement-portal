@@ -47,17 +47,22 @@ export default function Layout() {
   const [due, setDue] = useState(0);
   useEffect(() => {
     let alive = true;
-    const today = new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10);
-    supabase.from("conversations").select("id", { count: "exact", head: true }).eq("unread", true).eq("archived", false).then(({ count }) => alive && setUnread(count ?? 0));
-    if (profile.role !== "owner") supabase.from("key_dates").select("id", { count: "exact", head: true }).is("done_at", null).eq("yearly", false).eq("agent_id", profile.id).lte("due_on", today).then(({ count }) => alive && setDue(count ?? 0));
-    return () => { alive = false; };
+    const refresh = () => {
+      const today = new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10);
+      supabase.from("conversations").select("id", { count: "exact", head: true }).eq("unread", true).eq("archived", false).then(({ count }) => alive && setUnread(count ?? 0));
+      if (profile.role !== "owner") supabase.from("key_dates").select("id", { count: "exact", head: true }).is("done_at", null).eq("yearly", false).eq("agent_id", profile.id).lte("due_on", today).then(({ count }) => alive && setDue(count ?? 0));
+    };
+    refresh();
+    const t = setInterval(refresh, 30000); // new replies show up without reloading
+    window.addEventListener("bp:counts-changed", refresh); // e.g. a conversation was just read
+    return () => { alive = false; clearInterval(t); window.removeEventListener("bp:counts-changed", refresh); };
   }, [loc.pathname, profile.id, profile.role]);
 
   const sections = [
     { key: "main", items: [{ to: "/", label: "Home", icon: ICONS.home, show: true }] },
     { key: "work", title: "Work", items: [
       { to: "/campaigns", label: "Campaigns", icon: ICONS.send, show: true },
-      { to: "/inbox", label: "Inbox", icon: ICONS.inbox, show: true, badge: unread ? { n: unread, tone: "brand", label: `${unread} unread conversation${unread > 1 ? "s" : ""}` } : null },
+      { to: "/inbox", label: "Inbox", icon: ICONS.inbox, show: true, badge: unread ? { n: unread > 99 ? "99+" : unread, tone: "unread", label: `${unread} unread conversation${unread > 1 ? "s" : ""}` } : null },
       { to: "/hot", label: "Hot Leads", icon: ICONS.flame, show: true },
       { to: "/dates", label: "Dates", icon: ICONS.calendar, show: true, badge: due ? { n: due, tone: "warn", label: `${due} date${due > 1 ? "s" : ""} due or overdue` } : null },
     ] },
@@ -101,8 +106,8 @@ export default function Layout() {
             if (!sec.title) return <div key={sec.key} className="nav-group">{sec.items.map(navItem)}</div>;
             const isOpen = !collapsed.includes(sec.key);
             const hidden = sec.items.filter((i) => i.badge);
-            const total = hidden.reduce((n, i) => n + i.badge.n, 0);
-            const tone = hidden.some((i) => i.badge.tone === "bad") ? "bad" : hidden.some((i) => i.badge.tone === "warn") ? "warn" : "brand";
+            const total = hidden.reduce((n, i) => n + (parseInt(i.badge.n, 10) || 0), 0);
+            const tone = hidden.some((i) => i.badge.tone === "bad") ? "bad" : hidden.some((i) => i.badge.tone === "unread") ? "unread" : hidden.some((i) => i.badge.tone === "warn") ? "warn" : "brand";
             // a collapsed section still shows the page you're on, so you never lose your place
             const visible = isOpen ? sec.items : sec.items.filter((i) => isActivePath(i.to));
             return (

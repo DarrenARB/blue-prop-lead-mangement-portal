@@ -132,11 +132,11 @@ function NewCampaign({ onClose }) {
         </Field>
         <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend style={{ fontWeight: 500, marginBottom: 6 }}>What’s it for?</legend>
-          <div className="pick-grid">
+          <div className="goal-grid">
             {GOALS.map(([k, l, d]) => (
-              <label key={k} className={`pick ${f.goal === k ? "bm-sel" : ""}`} style={{ cursor: "pointer" }}>
-                <input type="radio" name="goal" value={k} checked={f.goal === k} onChange={() => setF({ ...f, goal: k })} style={{ marginRight: 6 }} />
-                <strong>{l}</strong><div className="cell-sub">{d}</div>
+              <label key={k} className={`goal-opt ${f.goal === k ? "on" : ""}`}>
+                <input type="radio" name="goal" value={k} checked={f.goal === k} onChange={() => setF({ ...f, goal: k })} />
+                <span className="goal-text"><strong>{l}</strong><span className="cell-sub">{d}</span></span>
               </label>
             ))}
           </div>
