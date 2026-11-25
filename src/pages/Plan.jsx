@@ -224,6 +224,7 @@ export default function Plan() {
                           <div className="cell-title">{i.title}</div>
                           <div className="cell-sub">{i.detail}</div>
                           {i.notes && <div className="cell-sub" style={{ color: "var(--brand)", marginTop: 2 }}>Note: {i.notes}</div>}
+                          {i.remaining && !DONE.includes(i.status) && <div className="left-todo"><strong>Still to do:</strong> {i.remaining}</div>}
                         </td>
                         <td className="num">{Number(i.price) ? fmtR(i.price) : <span className="muted">Not priced</span>}</td>
                         <td>
@@ -252,8 +253,10 @@ export default function Plan() {
   );
 }
 
+const DONE = ["built", "signed_off"];
+
 function EditItem({ item, projectValue, allocated, onClose, onSaved }) {
-  const [f, setF] = useState({ status: item.status, progress: item.progress, price: item.price, notes: item.notes ?? "" });
+  const [f, setF] = useState({ status: item.status, progress: item.progress, price: item.price, notes: item.notes ?? "", remaining: item.remaining ?? "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   async function submit(e) {
@@ -264,6 +267,7 @@ function EditItem({ item, projectValue, allocated, onClose, onSaved }) {
       progress: f.status === "in_progress" ? Math.max(0, Math.min(99, Number(f.progress) || 0)) : f.progress,
       price: Number(f.price) || 0,
       notes: f.notes.trim() || null,
+      remaining: DONE.includes(f.status) ? null : f.remaining.trim() || null, // nothing left once built
     }).eq("code", item.code);
     setBusy(false);
     if (error) return setError(error);
@@ -296,6 +300,11 @@ function EditItem({ item, projectValue, allocated, onClose, onSaved }) {
         <Field label="Note" id="it-notes" hint="Shown to the client on this page and in client updates.">
           <textarea id="it-notes" className="textarea" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
         </Field>
+        {!DONE.includes(f.status) && (
+          <Field label="Still to do" id="it-left" hint="Shown in red on the plan. Cleared automatically when the item is built.">
+            <textarea id="it-left" className="textarea" value={f.remaining} onChange={(e) => setF({ ...f, remaining: e.target.value })} />
+          </Field>
+        )}
         <ErrorNote error={error} />
       </form>
     </Modal>
@@ -451,6 +460,7 @@ function Extras({ extras, scopeItems, isFinLink, onChanged }) {
                       <div className="cell-sub">{e.detail}</div>
                       {e.benefit && <div className="cell-sub" style={{ marginTop: 3 }}><strong style={{ fontWeight: 500, color: "var(--ink)" }}>Why:</strong> {e.benefit}</div>}
                       {e.notes && <div className="cell-sub" style={{ color: "var(--brand)", marginTop: 2 }}>Note: {e.notes}</div>}
+                      {e.remaining && !DONE.includes(e.status) && <div className="left-todo"><strong>Still to do:</strong> {e.remaining}</div>}
                       <div className="cell-sub" style={{ marginTop: 3 }}>Added {fmtDate(e.added_at)}{e.added_by ? ` by ${e.added_by}` : ""}</div>
                     </td>
                     <td className="code">{e.related_code || "—"}</td>
@@ -478,7 +488,7 @@ function ExtraModal({ item, scopeItems, onClose, onSaved }) {
   const [f, setF] = useState({
     title: item.title ?? "", detail: item.detail ?? "", benefit: item.benefit ?? "",
     related_code: item.related_code ?? "", billing: item.billing ?? "not_charged", price: item.price ?? 0,
-    status: item.status ?? "not_started", progress: item.progress ?? 0, notes: item.notes ?? "",
+    status: item.status ?? "not_started", progress: item.progress ?? 0, notes: item.notes ?? "", remaining: item.remaining ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -496,6 +506,7 @@ function ExtraModal({ item, scopeItems, onClose, onSaved }) {
       status: f.status,
       progress: f.status === "in_progress" ? Math.max(0, Math.min(99, Number(f.progress) || 0)) : f.status === "not_started" ? 0 : 100,
       notes: f.notes.trim() || null,
+      remaining: DONE.includes(f.status) ? null : f.remaining.trim() || null,
     };
     const q = isNew
       ? supabase.from("plan_items").insert({ ...row, scope: "extra", grp: "extra" })
@@ -557,6 +568,7 @@ function ExtraModal({ item, scopeItems, onClose, onSaved }) {
           </Field>
         )}
         <Field label="Note (optional)" id="x-notes"><input id="x-notes" className="input" value={f.notes} onChange={set("notes")} /></Field>
+        {!DONE.includes(f.status) && <Field label="Still to do" id="x-left" hint="Shown in red on the plan."><input id="x-left" className="input" value={f.remaining} onChange={set("remaining")} /></Field>}
         <ErrorNote error={error} />
       </form>
     </Modal>
