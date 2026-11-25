@@ -369,3 +369,22 @@ details > summary { cursor: pointer; }
   .inbox-back { order: -1; flex-basis: 100%; justify-content: flex-start; width: fit-content; }
   .page-head .row { flex-wrap: wrap; }
 }
+
+/* ---------- collapsible, compact menu ---------- */
+.side { gap: 2px; padding-top: 16px; padding-bottom: 12px; }
+.brand { padding-bottom: 10px; }
+.side-nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-group { display: flex; flex-direction: column; gap: 1px; }
+.side .nav { min-height: 38px; }
+button.nav-section { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; text-align: left; padding: 12px 12px 4px; cursor: pointer; border-radius: 8px; color: #8A93C2; font: 700 11px/1.2 Roboto, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+button.nav-section:hover { color: #fff; }
+button.nav-section:focus-visible { outline: 3px solid var(--orange); outline-offset: 1px; }
+button.nav-section > span:first-child { flex: 1; }
+button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; font-size: 11px; letter-spacing: 0; }
+.chev { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; transform: rotate(-90deg); transition: transform .15s; flex: none; }
+.chev.open { transform: none; }
+.side-foot { padding-top: 10px; gap: 0; }
+.side-foot .me { padding: 4px 4px 0; gap: 8px; }
+.foot-btn { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: #C9D3E3; background: none; border: 0; flex: none; }
+.foot-btn:hover, .foot-btn.active { background: rgba(255,255,255,.1); color: #fff; }
+.foot-btn:focus-visible { outline: 3px solid var(--orange); outline-offset: 1px; }
