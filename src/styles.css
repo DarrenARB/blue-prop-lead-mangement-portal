@@ -204,8 +204,12 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .branch-map:focus-visible { outline-offset: -3px; }
 .picker-map { height: 300px; border-radius: 12px; border: 1px solid var(--line); overflow: hidden; }
 .prov-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; border-top: 1px solid var(--line); background: #fff; }
-.prov { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; border: 1px dashed #C3CCDA; color: var(--muted); }
-.prov.on { border: 1px solid transparent; background: var(--soft); color: var(--brand); font-weight: 500; }
+.prov { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; border: 1px dashed #C3CCDA; color: var(--muted); background: #fff; }
+.prov:hover { border-color: #97A3B8; color: var(--ink); }
+.prov.has { border: 1px solid transparent; background: var(--soft); color: var(--brand); font-weight: 500; }
+.prov.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+.prov-n { font-size: 11.5px; background: rgba(27,72,155,.12); border-radius: 999px; padding: 0 6px; margin-left: 2px; }
+.prov.on .prov-n { background: rgba(255,255,255,.25); }
 .branch-list { padding: 18px; max-height: 600px; overflow: auto; }
 .bcards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .bcard { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: #fff; }

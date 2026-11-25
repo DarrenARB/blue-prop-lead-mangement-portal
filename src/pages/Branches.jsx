@@ -21,6 +21,7 @@ export default function Branches() {
   const [selected, setSelected] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [modal, setModal] = useState(null); // branch or {} for new
+  const [province, setProvince] = useState(null); // province filter
 
   const load = useCallback(async () => {
     try {
@@ -38,7 +39,10 @@ export default function Branches() {
   if (error) return <ErrorNote error={error} />;
   if (!data) return <Spinner />;
 
-  const shown = showArchived ? data.branches : active;
+  const inProv = (b) => !province || b.province === province;
+  const shown = (showArchived ? data.branches : active).filter(inProv);
+  const onMap = active.filter(inProv);
+  const countIn = (p) => active.filter((b) => b.province === p).length;
   const covered = new Set(active.map((b) => b.province).filter(Boolean));
   const unplaced = active.filter((b) => b.lat == null);
   const agentsIn = (id) => data.people.filter((p) => p.role === "agent" && p.status === "active" && p.branch_id === id).length;
@@ -59,35 +63,44 @@ export default function Branches() {
           <h1>{active.length ? `${active.length} branch${active.length === 1 ? "" : "es"} across ${covered.size} province${covered.size === 1 ? "" : "s"}` : "Branches"}</h1>
           <p className="muted">Each office on the map, with the area it covers. Archiving a branch keeps its campaigns and history.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setModal({})}><Icon d={ICONS.plus} />Add branch</button>
+        <button className="btn btn-primary" onClick={() => setModal(province ? { province } : {})}><Icon d={ICONS.plus} />Add branch</button>
       </div>
 
       <section className="card map-card">
         <div className="map-grid">
           <div className="map-wrap">
-            <BranchMap branches={active} selectedId={selected} onSelect={setSelected} />
-            <div className="prov-strip" aria-label="Provinces covered">
-              {PROVINCES.map((p) => (
-                <span key={p} className={`prov ${covered.has(p) ? "on" : ""}`}>
-                  {covered.has(p) && <svg viewBox="0 0 24 24" className="ic ic-s" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>}
-                  {p}
-                </span>
-              ))}
+            <BranchMap branches={onMap} selectedId={selected} onSelect={setSelected} />
+            <div className="prov-strip" role="group" aria-label="Filter by province">
+              {PROVINCES.map((p) => {
+                const n = countIn(p);
+                return (
+                  <button key={p} type="button" className={`prov ${n ? "has" : ""} ${province === p ? "on" : ""}`} aria-pressed={province === p}
+                    onClick={() => { setProvince(province === p ? null : p); setSelected(null); }}
+                    title={n ? `Show only ${p} (${n})` : `No branches in ${p} yet`}>
+                    {n > 0 && <svg viewBox="0 0 24 24" className="ic ic-s" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>}
+                    {p}{n > 0 && <span className="prov-n">{n}</span>}
+                  </button>
+                );
+              })}
+              {province && <button type="button" className="btn-link small" onClick={() => setProvince(null)}>Show all provinces</button>}
             </div>
           </div>
 
           <div className="branch-list">
             <div className="row spread" style={{ padding: "2px 2px 10px" }}>
-              <h2>Branches</h2>
+              <h2>{province ? `Branches in ${province}` : "Branches"}</h2>
               {data.branches.length > active.length && (
                 <label className="check small"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />Show archived</label>
               )}
             </div>
+            {active.some((b) => !b.province) && <div className="note note-warn small" style={{ marginBottom: 10 }}>{active.filter((b) => !b.province).length} branch{active.filter((b) => !b.province).length > 1 ? "es have" : " has"} no province, so {active.filter((b) => !b.province).length > 1 ? "they don’t" : "it doesn’t"} show under any province filter. Edit to set it.</div>}
             {unplaced.length > 0 && <div className="note note-warn small" style={{ marginBottom: 10 }}>{unplaced.length} branch{unplaced.length > 1 ? "es aren’t" : " isn’t"} on the map yet. Edit {unplaced.length > 1 ? "them" : "it"} to add the address.</div>}
             {shown.length === 0 ? (
-              <Empty title="No branches yet" action={<button className="btn btn-primary" onClick={() => setModal({})}>Add the first branch</button>}>
-                Add Blue PROP’s offices to see how they cover South Africa.
-              </Empty>
+              province
+                ? <Empty title={`No branches in ${province} yet`} action={<button className="btn" onClick={() => setProvince(null)}>Show all provinces</button>} />
+                : <Empty title="No branches yet" action={<button className="btn btn-primary" onClick={() => setModal({})}>Add the first branch</button>}>
+                    Add Blue PROP’s offices to see how they cover South Africa.
+                  </Empty>
             ) : (
               <ul className="bcards">
                 {shown.map((b) => (
@@ -102,7 +115,7 @@ export default function Branches() {
                         </span>
                       </button>
                       <div className="bcard-actions">
-                        {b.archived_at ? <Badge>Archived</Badge> : b.lat == null ? <Badge tone="warn">Not on map</Badge> : null}
+                        {b.archived_at ? <Badge>Archived</Badge> : b.lat == null ? <Badge tone="warn">Not on map</Badge> : !b.province ? <Badge tone="warn">No province</Badge> : null}
                         {!b.archived_at && <button className="btn btn-sm" onClick={() => setModal(b)}>Edit</button>}
                         <button className="btn btn-sm" onClick={() => toggleArchive(b)}>{b.archived_at ? "Restore" : "Archive"}</button>
                       </div>
@@ -137,6 +150,7 @@ function BranchModal({ branch, onClose, onSaved }) {
     e.preventDefault();
     setError(null);
     if (!name.trim()) return setError("Give the branch a name.");
+    if (!loc.province) return setError("Choose the branch’s province.");
     setBusy(true);
     const row = {
       name: name.trim(), icon, color, radius_km: Number(radius),
@@ -157,6 +171,18 @@ function BranchModal({ branch, onClose, onSaved }) {
         <Field label="Branch name" id="b-name"><input id="b-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ferndale" required /></Field>
 
         <LocationPicker value={loc} onChange={setLoc} icon={icon} color={color} radiusKm={Number(radius)} />
+
+        <div className="grid g2">
+          <Field label="Province (required)" id="b-prov" hint={loc.province && loc.lat != null ? "Filled in from the address. Change it if it’s wrong." : "Filled in automatically when you pick an address or drop the pin."}>
+            <select id="b-prov" className="select" value={PROVINCES.includes(loc.province) ? loc.province : ""} onChange={(e) => setLoc({ ...loc, province: e.target.value || null })} required>
+              <option value="">Choose a province…</option>
+              {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </Field>
+          <Field label="Town or city" id="b-city" hint="Shown on the branch card.">
+            <input id="b-city" className="input" value={loc.city ?? ""} onChange={(e) => setLoc({ ...loc, city: e.target.value || null })} placeholder="Randburg" />
+          </Field>
+        </div>
 
         <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend style={{ fontWeight: 500, fontSize: 13.5, marginBottom: 6 }}>Icon</legend>

@@ -30,7 +30,7 @@ export default function LocationPicker({ value, onChange, icon, color, radiusKm 
     if (fromSearch) return;
     try {
       const r = await reverseLookup(lat, lng);
-      if (r) changeRef.current({ ...valueRef.current, lat, lng, suburb: r.suburb, city: r.city, province: r.province, address: valueRef.current.address || r.label });
+      if (r) changeRef.current({ ...valueRef.current, lat, lng, suburb: r.suburb ?? valueRef.current.suburb, city: r.city ?? valueRef.current.city, province: r.province ?? valueRef.current.province, address: valueRef.current.address || r.label });
       if (r && !valueRef.current.address) { skipSearch.current = true; setQuery(r.label); }
     } catch { /* offline: keep the pin */ }
   };
@@ -94,7 +94,7 @@ export default function LocationPicker({ value, onChange, icon, color, radiusKm 
     skipSearch.current = true;
     setQuery(r.label);
     setOpen(false); setResults([]);
-    placeAt(r.lat, r.lng, { address: r.label, suburb: r.suburb, city: r.city, province: r.province });
+    placeAt(r.lat, r.lng, { address: r.label, suburb: r.suburb, city: r.city ?? valueRef.current.city, province: r.province ?? valueRef.current.province });
     map.current?.flyTo([r.lat, r.lng], 16, { duration: 0.6 });
   }
 
