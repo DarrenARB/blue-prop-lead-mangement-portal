@@ -9,7 +9,8 @@ Multi-user portal in front of lemlist so Blue PROP (Blue Property Group, South A
 - AI (later stages): Claude Haiku (`claude-haiku-5-5`) via the `ANTHROPIC_API_KEY` Edge Function secret.
 
 ## Layout
-- `src/pages/` — Setup (first run), Login, ChangePassword, Home, Team (branches & people), Lemlist (connection & numbers), Plan (project plan + Fin-Link money panel), Audit.
+- `src/pages/` — Setup (first run), Login, ChangePassword, Home, Branches (map of South Africa with icon pins, coverage circles, province strip; add/edit with address search + draggable pin), Team (people), Lemlist (connection & numbers; read-only view for Branch Owners), Plan (project plan + Fin-Link money panel), Audit.
+- `src/components/BranchMap.jsx`, `LocationPicker.jsx`, `src/lib/branchStyle.js` — Leaflet maps. Tiles: CARTO Positron (attribution required). Address search/reverse: OpenStreetMap Nominatim, limited to South Africa (~1 request/second; switch to a paid geocoder if volume grows).
 - `src/lib/` — `supabase.js` (client + `callFn` for Edge Functions), `auth.jsx` (session/profile context), `format.js`.
 - `supabase/functions/admin-users` — bootstrap, invite (temp password), update, deactivate, reactivate, reset_password.
 - `supabase/functions/lemlist` — test, available_users, connect, disconnect, sync (raises support alerts on status changes), assign, record_reconnection. Read-only towards lemlist so far.

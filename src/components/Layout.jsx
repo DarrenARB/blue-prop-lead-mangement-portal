@@ -28,7 +28,8 @@ export default function Layout() {
 
   const links = [
     { to: "/", label: "Home", icon: ICONS.home, show: true },
-    { to: "/team", label: "Branches & people", icon: ICONS.team, show: isAdmin },
+    { to: "/branches", label: "Branches", icon: ICONS.map, show: isAdmin },
+    { to: "/team", label: "People", icon: ICONS.team, show: isAdmin },
     { to: "/lemlist", label: isAdmin ? "lemlist & numbers" : "WhatsApp numbers", icon: ICONS.phone, show: canSeeNumbers,
       badge: attention.bad || attention.phone ? { n: attention.bad + attention.phone, tone: attention.bad ? "bad" : "warn",
         label: [attention.bad && `${attention.bad} number${attention.bad > 1 ? "s" : ""} need attention`, attention.phone && `${attention.phone} phone number${attention.phone > 1 ? "s" : ""} needed`].filter(Boolean).join(", ") } : null },

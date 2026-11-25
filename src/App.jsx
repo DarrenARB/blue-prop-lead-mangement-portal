@@ -9,6 +9,7 @@ import Setup from "./pages/Setup";
 import ChangePassword from "./pages/ChangePassword";
 import Home from "./pages/Home";
 import Team from "./pages/Team";
+import Branches from "./pages/Branches";
 import Lemlist from "./pages/Lemlist";
 import Plan from "./pages/Plan";
 import Audit from "./pages/Audit";
@@ -42,6 +43,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Home />} />
+        <Route path="branches" element={isAdmin ? <Branches /> : <Navigate to="/" />} />
         <Route path="team" element={isAdmin ? <Team /> : <Navigate to="/" />} />
         <Route path="lemlist" element={canSeeNumbers ? <Lemlist /> : <Navigate to="/" />} />
         <Route path="plan" element={isAdmin ? <Plan /> : <Navigate to="/" />} />

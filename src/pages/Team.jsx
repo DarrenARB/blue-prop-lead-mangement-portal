@@ -16,8 +16,6 @@ export default function Team() {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [showArchived, setShowArchived] = useState(false);
-  const [branchModal, setBranchModal] = useState(null); // {id?, name}
   const [personModal, setPersonModal] = useState(null); // {mode:'invite'|'edit', person?}
   const [secret, setSecret] = useState(null); // {name, email, password, kind}
   const [confirm, setConfirm] = useState(null);
@@ -40,31 +38,7 @@ export default function Team() {
   if (error) return <ErrorNote error={error} />;
   if (!data) return <Spinner />;
 
-  const activeBranches = data.branches.filter((b) => !b.archived_at);
-  const shownBranches = showArchived ? data.branches : activeBranches;
-  const agentsIn = (bid) => data.people.filter((p) => p.role === "agent" && p.branch_id === bid && p.status === "active").length;
-  const ownersOf = (bid) => data.owners.filter((o) => o.branch_id === bid).map((o) => data.people.find((p) => p.id === o.owner_id)?.full_name).filter(Boolean);
   const numberOf = (pid) => data.numbers.find((n) => n.agent_id === pid);
-
-  async function saveBranch(e) {
-    e.preventDefault();
-    const name = branchModal.name.trim();
-    if (!name) return;
-    const q = branchModal.id
-      ? supabase.from("branches").update({ name }).eq("id", branchModal.id)
-      : supabase.from("branches").insert({ name });
-    const { error } = await q;
-    if (error) return toast(error.code === "23505" ? "A branch with that name already exists." : error.message, "bad");
-    toast(branchModal.id ? "Branch renamed" : "Branch added");
-    setBranchModal(null); load();
-  }
-
-  async function toggleArchive(b) {
-    const { error } = await supabase.from("branches").update({ archived_at: b.archived_at ? null : new Date().toISOString() }).eq("id", b.id);
-    if (error) return toast(error.message, "bad");
-    toast(b.archived_at ? `${b.name} restored` : `${b.name} archived`);
-    load();
-  }
 
   async function runPersonAction(action, person) {
     try {
@@ -80,51 +54,11 @@ export default function Team() {
       <div className="page-head">
         <div>
           <p className="eyebrow">Main Admin</p>
-          <h1>Branches & people</h1>
-          <p className="muted">Everyone gets their own login. Agents belong to one branch and send from one WhatsApp number; Branch Owners see the branches they oversee.</p>
+          <h1>People</h1>
+          <p className="muted">Everyone gets their own login. Agents belong to one branch and send from one WhatsApp number; Branch Owners see the branches they oversee. Add branches on the Branches page.</p>
         </div>
         <button className="btn btn-primary" onClick={() => setPersonModal({ mode: "invite" })}><Icon d={ICONS.plus} />Invite someone</button>
       </div>
-
-      {/* ---------- Branches ---------- */}
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2>Branches</h2>
-            <p className="muted small">{activeBranches.length} active{data.branches.length > activeBranches.length ? ` · ${data.branches.length - activeBranches.length} archived` : ""}</p>
-          </div>
-          <div className="row">
-            {data.branches.length > activeBranches.length && (
-              <label className="check small"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />Show archived</label>
-            )}
-            <button className="btn btn-sm" onClick={() => setBranchModal({ name: "" })}><Icon d={ICONS.plus} className="ic ic-s" />Add branch</button>
-          </div>
-        </div>
-        {shownBranches.length === 0 ? (
-          <Empty title="No branches yet">Add Blue PROP’s offices first, then invite agents into them.</Empty>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Branch</th><th>Branch Owner</th><th className="num">Agents</th><th></th></tr></thead>
-              <tbody>
-                {shownBranches.map((b) => (
-                  <tr key={b.id} className={b.archived_at ? "dim" : ""}>
-                    <td><span className="cell-title">{b.name}</span>{b.archived_at && <> <Badge>Archived</Badge></>}</td>
-                    <td>{ownersOf(b.id).join(", ") || <span className="muted">None yet</span>}</td>
-                    <td className="num">{agentsIn(b.id)}</td>
-                    <td className="num">
-                      <div className="row" style={{ justifyContent: "flex-end" }}>
-                        {!b.archived_at && <button className="btn btn-sm" onClick={() => setBranchModal({ id: b.id, name: b.name })}>Rename</button>}
-                        <button className="btn btn-sm" onClick={() => toggleArchive(b)}>{b.archived_at ? "Restore" : "Archive"}</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
 
       {/* ---------- People ---------- */}
       <section className="card">
@@ -171,15 +105,6 @@ export default function Team() {
           </table>
         </div>
       </section>
-
-      {branchModal && (
-        <Modal title={branchModal.id ? "Rename branch" : "Add a branch"} onClose={() => setBranchModal(null)}
-          footer={<><button className="btn" onClick={() => setBranchModal(null)}>Cancel</button><button className="btn btn-primary" form="branch-form">{branchModal.id ? "Save" : "Add branch"}</button></>}>
-          <form id="branch-form" onSubmit={saveBranch}>
-            <Field label="Branch name" id="bname"><input id="bname" className="input" value={branchModal.name} onChange={(e) => setBranchModal({ ...branchModal, name: e.target.value })} required /></Field>
-          </form>
-        </Modal>
-      )}
 
       {personModal && (
         <PersonModal
@@ -298,7 +223,7 @@ function PersonModal({ mode, person, data, me, onClose, onSaved }) {
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </Field>
-            {branches.length === 0 && <p className="note note-warn">Add a branch first.</p>}
+            {branches.length === 0 && <p className="note note-warn">Add a branch first, on the Branches page.</p>}
             <Field label="WhatsApp number" id="p-number" hint="Only numbers that aren’t linked to anyone are listed. Every campaign this agent creates will send from it.">
               <select id="p-number" className="select" value={f.number_id} onChange={(e) => {
                 const n = data.numbers.find((x) => x.id === e.target.value);
@@ -334,7 +259,7 @@ function PersonModal({ mode, person, data, me, onClose, onSaved }) {
                 {b.name}
               </label>
             ))}
-            {branches.length === 0 && <p className="note note-warn">Add a branch first.</p>}
+            {branches.length === 0 && <p className="note note-warn">Add a branch first, on the Branches page.</p>}
           </div>
         )}
         <ErrorNote error={error} />
