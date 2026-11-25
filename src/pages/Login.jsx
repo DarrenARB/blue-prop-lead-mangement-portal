@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import AuthShell from "../components/AuthShell";
-import { ErrorNote, Field } from "../components/ui";
+import { ErrorNote, Field, PasswordInput } from "../components/ui";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -28,7 +28,7 @@ export default function Login() {
           <input id="email" className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </Field>
         <Field label="Password" id="password">
-          <input id="password" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <PasswordInput id="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>
         <ErrorNote error={error} />
         <button className="btn btn-primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>

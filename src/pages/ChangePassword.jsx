@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import AuthShell from "../components/AuthShell";
-import { ErrorNote, Field, useToast } from "../components/ui";
+import { ErrorNote, Field, PasswordInput, useToast } from "../components/ui";
 
 export default function ChangePassword({ forced }) {
   const { profile, refreshProfile, signOut } = useAuth();
@@ -35,8 +35,8 @@ export default function ChangePassword({ forced }) {
           <p className="muted" style={{ marginTop: 6 }}>You signed in with a temporary password. Choose your own to continue.</p>
         </div>
       )}
-      <Field label="New password" id="np" hint="At least 10 characters."><input id="np" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></Field>
-      <Field label="Confirm new password" id="np2"><input id="np2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} required /></Field>
+      <Field label="New password" id="np" hint="At least 10 characters."><PasswordInput id="np" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></Field>
+      <Field label="Confirm new password" id="np2"><PasswordInput id="np2" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} required /></Field>
       <ErrorNote error={error} />
       <div className="row">
         <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save password"}</button>

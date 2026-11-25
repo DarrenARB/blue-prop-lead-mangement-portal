@@ -183,3 +183,10 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
   .auth-art { display: none; }
 }
 @media (max-width: 560px) { .g4 { grid-template-columns: 1fr; } .main { padding-top: 18px; } }
+
+/* ---------- password show/hide ---------- */
+.pw-wrap { position: relative; }
+.pw-wrap .input { padding-right: 52px; }
+.pw-toggle { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 44px; height: 40px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); display: grid; place-items: center; }
+.pw-toggle:hover { background: var(--soft); color: var(--ink); }
+.pw-wrap .input::-ms-reveal { display: none; }

@@ -23,6 +23,31 @@ export function ErrorNote({ error }) {
   return <div className="note note-bad" role="alert">{String(error.message || error)}</div>;
 }
 
+// Password box with a show/hide (eye) button. Takes the same props as an <input>.
+export function PasswordInput({ id, className = "input", ...props }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="pw-wrap">
+      <input id={id} className={className} type={show ? "text" : "password"} autoCapitalize="none" spellCheck={false} {...props} />
+      <button
+        type="button"
+        className="pw-toggle"
+        onClick={() => setShow((s) => !s)}
+        aria-label={show ? "Hide password" : "Show password"}
+        aria-pressed={show}
+        aria-controls={id}
+        title={show ? "Hide password" : "Show password"}
+      >
+        {show ? (
+          <svg viewBox="0 0 24 24" className="ic" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A9.8 9.8 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3.2 4.3M6.1 6.1C3.9 7.6 2.5 9.8 2 12c1 2.5 5 7 10 7a9.9 9.9 0 0 0 4.2-.9" /></svg>
+        ) : (
+          <svg viewBox="0 0 24 24" className="ic" aria-hidden="true"><path d="M2 12c1-2.5 5-7 10-7s9 4.5 10 7c-1 2.5-5 7-10 7S3 14.5 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+        )}
+      </button>
+    </div>
+  );
+}
+
 export function Field({ label, hint, children, id }) {
   return (
     <div className="field">
@@ -35,12 +60,25 @@ export function Field({ label, hint, children, id }) {
 
 export function Modal({ title, sub, onClose, children, footer, wide }) {
   const ref = useRef(null);
+  // Keep the latest onClose without re-running the effect: parents pass a new function on every
+  // render (every keystroke), and re-running the effect used to steal focus while typing.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  // Escape closes the dialog.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    const onKey = (e) => { if (e.key === "Escape") closeRef.current?.(); };
     document.addEventListener("keydown", onKey);
-    ref.current?.querySelector("input, select, textarea, button")?.focus();
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
+
+  // Focus the first field once, when the dialog opens (not the close button).
+  useEffect(() => {
+    const body = ref.current;
+    const first = body?.querySelector(".modal-body input:not([type=hidden]), .modal-body select, .modal-body textarea")
+      ?? body?.querySelector(".modal-foot button, .modal-body button");
+    first?.focus();
+  }, []);
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
       <div className={`modal ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" ref={ref}>

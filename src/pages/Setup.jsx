@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { callFn, supabase } from "../lib/supabase";
 import AuthShell from "../components/AuthShell";
-import { ErrorNote, Field } from "../components/ui";
+import { ErrorNote, Field, PasswordInput } from "../components/ui";
 
 // First-run screen: only shown while the portal has no accounts. Creates the Fin-Link Main Admin.
 export default function Setup({ onDone }) {
@@ -41,8 +41,8 @@ export default function Setup({ onDone }) {
         </div>
         <Field label="Full name" id="s-name"><input id="s-name" className="input" value={f.full_name} onChange={set("full_name")} required /></Field>
         <Field label="Email" id="s-email"><input id="s-email" className="input" type="email" autoComplete="username" value={f.email} onChange={set("email")} required /></Field>
-        <Field label="Password" id="s-pw" hint="At least 10 characters."><input id="s-pw" className="input" type="password" autoComplete="new-password" value={f.password} onChange={set("password")} required /></Field>
-        <Field label="Confirm password" id="s-pw2"><input id="s-pw2" className="input" type="password" autoComplete="new-password" value={f.confirm} onChange={set("confirm")} required /></Field>
+        <Field label="Password" id="s-pw" hint="At least 10 characters."><PasswordInput id="s-pw" autoComplete="new-password" value={f.password} onChange={set("password")} required /></Field>
+        <Field label="Confirm password" id="s-pw2"><PasswordInput id="s-pw2" autoComplete="new-password" value={f.confirm} onChange={set("confirm")} required /></Field>
         <ErrorNote error={error} />
         <button className="btn btn-primary" disabled={busy}>{busy ? "Creating…" : "Create admin account"}</button>
       </form>
