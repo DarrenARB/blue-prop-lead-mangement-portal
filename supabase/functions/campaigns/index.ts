@@ -196,7 +196,7 @@ Rules:
 - Short: message 1 under 320 characters, messages 2 and 3 under 260.
 - Each message asks at most ONE clear question.
 - No links, no emojis in message 1, no prices, statistics or promises you can't know. No ALL CAPS.
-- Use the placeholder {{firstName}} for the lead's first name. Use {{suburb}} only if it fits naturally.
+- Use the placeholder {{firstName}} for the lead's first name. Use {{suburb}} only if it fits naturally. Don't use {{lastName}} (too formal for WhatsApp).
 - Only when told the leads have addresses: {{address}} becomes e.g. "unit 12 in Red Complex" or "14 Oak Street", and {{complex}} is just
   the complex name. {{address}} already includes the complex, so never put {{address}} and {{complex}} in the same sentence.
   Use them naturally in message 1 (e.g. "I see you're at {{address}}" or "similar homes to yours in {{complex}}"), at most once per message.
@@ -265,7 +265,7 @@ async function rewriteMessage(_me: Me, body: any) {
   const text = clean(body.body, 1200);
   if (!text) throw new HttpError(400, "There’s no message to rewrite.");
   const how = clean(body.instruction, 200) ?? "make it shorter and more personal";
-  const user = `Rewrite this WhatsApp message (message ${Number(body.position) || 1} of 3). Keep any {{...}} placeholders (firstName, suburb, address, complex) exactly as written.
+  const user = `Rewrite this WhatsApp message (message ${Number(body.position) || 1} of 3). Keep any {{...}} placeholders (firstName, lastName, suburb, address, unit, complex, streetNumber, street) exactly as written.
 Instruction: ${how}
 Message: """${text}"""
 Return the rewritten message with the respond tool.`;

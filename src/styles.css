@@ -449,4 +449,16 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
 .agent-filter .select { width: auto; min-width: 180px; min-height: 40px; padding: 6px 10px; font-size: 14px; }
 .list-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .save-state { white-space: nowrap; }
+.save-draft { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.save-draft .btn svg { width: 15px; height: 15px; }
 .t-ok { color: var(--ok); font-weight: 500; }
+
+/* Campaigns: drafts kept apart from live */
+.view-help { margin: -4px 0 12px; }
+.draft-list { display: grid; gap: 10px; }
+.draft-card { display: flex; align-items: center; gap: 16px; background: #fff; border: 1px dashed #b9bfdc; border-radius: 10px; padding: 14px 16px; }
+.draft-main { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.draft-progress { display: flex; gap: 4px; max-width: 260px; margin-top: 4px; }
+.draft-progress span { flex: 1; height: 6px; border-radius: 3px; background: #e3e6f2; }
+.draft-progress span.on { background: var(--brand); }
+@media (max-width: 640px) { .draft-card { flex-direction: column; align-items: stretch; } }

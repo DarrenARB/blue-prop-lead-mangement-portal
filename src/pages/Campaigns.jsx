@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ago } from "../lib/format";
@@ -17,13 +17,27 @@ export const GOALS = [
   ["rental", "Rentals", "Help landlords and tenants"],
   ["other", "Something else", "Start a conversation about their property needs"],
 ];
+// Drafts and live campaigns are kept in separate views so nobody mistakes one for the other.
+const VIEWS = [["live", "Live"], ["draft", "Drafts"], ["finished", "Finished"]];
+export const viewOf = (status) => (status === "draft" ? "draft" : ["stopped", "ended"].includes(status) ? "finished" : "live");
+const VIEW_HELP = {
+  live: "Campaigns that have been launched and are sending, paused or need attention.",
+  draft: "Campaigns still being set up. Nothing is sent to anyone until a draft is launched.",
+  finished: "Campaigns that have ended or were stopped.",
+};
+const EMPTY = {
+  live: ["No live campaigns", "Launched campaigns show here. Finish a draft and launch it once launching is switched on."],
+  draft: ["No drafts", "A campaign takes about five minutes: name it, upload your leads, let AI draft the three messages, pick when they send."],
+  finished: ["Nothing finished yet", "Campaigns move here once they end or are stopped."],
+};
+const STEP_NAMES = ["Basics", "Leads", "Messages", "Schedule", "Review"];
 export const goalLabel = (g) => GOALS.find((x) => x[0] === g)?.[1] ?? "—";
 
 export default function Campaigns() {
   const { profile, isAdmin } = useAuth();
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
-  const [filter, setFilter] = useState("all");
+  const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
   const [agentF, setAgentF] = useAgentFilter();
   const canCreate = isAdmin || profile.role === "agent";
@@ -45,8 +59,15 @@ export default function Campaigns() {
   }, []);
 
   const mineRows = useMemo(() => (rows ?? []).filter((r) => !agentF || r.agent_id === agentF), [rows, agentF]);
-  const shown = useMemo(() => mineRows.filter((r) => filter === "all" || (filter === "live" ? ["running", "paused", "launching"].includes(r.status) : r.status === filter)), [mineRows, filter]);
-  const n = (s) => mineRows.filter((r) => (s === "live" ? ["running", "paused", "launching"].includes(r.status) : r.status === s)).length;
+  const groups = useMemo(() => {
+    const g = { live: [], draft: [], finished: [] };
+    for (const r of mineRows) g[viewOf(r.status)].push(r);
+    return g;
+  }, [mineRows]);
+  // Default: Live if anything is live, otherwise Drafts. ?view= keeps the choice in the link.
+  const view = VIEWS.some((v) => v[0] === params.get("view")) ? params.get("view") : rows && groups.live.length === 0 ? "draft" : "live";
+  const shown = groups[view];
+  const setView = (v) => setParams({ view: v }, { replace: true });
 
   return (
     <>
@@ -59,32 +80,51 @@ export default function Campaigns() {
         {canCreate && <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon d={ICONS.plus} />New campaign</button>}
       </div>
 
-      <div className="note note-info">Launching is switched on once the first lemlist test is approved. Until then you can build campaigns end to end (leads, AI messages, schedule) and they stay as drafts.</div>
-
       <div className="list-tools"><span /><AgentFilter value={agentF} onChange={setAgentF} /></div>
-      <div className="tabs" role="tablist" aria-label="Filter campaigns">
-        {[["all", "All", mineRows.length], ["draft", "Drafts", n("draft")], ["live", "Live", n("live")], ["ended", "Ended", n("ended")]].map(([k, l, c]) => (
-          <button key={k} role="tab" aria-selected={filter === k} className={`tab ${filter === k ? "active" : ""}`} onClick={() => setFilter(k)}>{l} <span className="tab-n">{c}</span></button>
+      <div className="tabs camp-views" role="tablist" aria-label="Campaign views">
+        {VIEWS.map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={view === k} className={`tab ${view === k ? "active" : ""}`} onClick={() => setView(k)}>{l} <span className="tab-n">{groups[k].length}</span></button>
         ))}
       </div>
+      <p className="muted small view-help">{VIEW_HELP[view]}</p>
+      {view === "draft" && <div className="note note-info">Launching is switched on once the first lemlist test is approved. Until then campaigns can be built end to end (leads, AI messages, schedule) and wait here as drafts.</div>}
 
       <ErrorNote error={error} />
       {!rows && !error ? <Spinner /> : rows && shown.length === 0 ? (
-        <div className="card"><Empty title={rows.length ? "Nothing here" : "No campaigns yet"} action={canCreate && !rows.length ? <button className="btn btn-primary" onClick={() => setCreating(true)}>Start your first campaign</button> : null}>
-          {rows.length ? "Try another filter." : "A campaign takes about five minutes: name it, upload your leads, let AI draft the three messages, pick when they send."}
+        <div className="card"><Empty title={EMPTY[view][0]} action={canCreate && view === "draft" ? <button className="btn btn-primary" onClick={() => setCreating(true)}>Start a campaign</button> : null}>
+          {EMPTY[view][1]}
         </Empty></div>
+      ) : rows && view === "draft" ? (
+        <div className="draft-list">
+          {shown.map((c) => {
+            const step = Math.min(Math.max(c.wizard_step ?? 1, 1), 5);
+            return (
+              <div key={c.id} className="draft-card">
+                <div className="draft-main">
+                  <Link to={`/campaigns/${c.id}`} className="cell-title">{c.name}</Link>
+                  <div className="cell-sub">{goalLabel(c.goal)}{profile.role !== "agent" ? ` · ${c.agent}` : ""} · {c.leads.toLocaleString("en-ZA")} lead{c.leads === 1 ? "" : "s"}</div>
+                  <div className="draft-progress" aria-label={`Step ${step} of 5: ${STEP_NAMES[step - 1]}`}>
+                    {STEP_NAMES.map((nm, i) => <span key={nm} className={i < step ? "on" : ""} title={nm} />)}
+                  </div>
+                  <div className="small muted">Step {step} of 5 · {STEP_NAMES[step - 1]} · saved {ago(c.updated_at)}</div>
+                </div>
+                <Link to={`/campaigns/${c.id}`} className="btn btn-primary btn-sm">Continue editing</Link>
+              </div>
+            );
+          })}
+        </div>
       ) : rows && (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Campaign</th>{profile.role !== "agent" && <th>Agent</th>}<th>Status</th><th className="num">Leads</th><th>Last change</th></tr></thead>
+            <thead><tr><th>Campaign</th>{profile.role !== "agent" && <th>Agent</th>}<th>Status</th><th className="num">Leads</th><th>{view === "live" ? "Launched" : "Last change"}</th></tr></thead>
             <tbody>
               {shown.map((c) => (
                 <tr key={c.id}>
-                  <td><Link to={`/campaigns/${c.id}`} className="cell-title">{c.name}</Link><div className="cell-sub">{goalLabel(c.goal)}{c.status === "draft" ? ` · step ${c.wizard_step} of 5` : ""}</div></td>
+                  <td><Link to={`/campaigns/${c.id}`} className="cell-title">{c.name}</Link><div className="cell-sub">{goalLabel(c.goal)}</div></td>
                   {profile.role !== "agent" && <td>{c.agent}</td>}
                   <td><Badge tone={CAMPAIGN_STATUS[c.status]?.[1]}>{CAMPAIGN_STATUS[c.status]?.[0] ?? c.status}</Badge></td>
                   <td className="num">{c.leads.toLocaleString("en-ZA")}</td>
-                  <td className="small">{ago(c.updated_at)}</td>
+                  <td className="small">{ago(view === "live" ? c.launched_at ?? c.updated_at : c.updated_at)}</td>
                 </tr>
               ))}
             </tbody>

@@ -4,8 +4,8 @@ import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ADDRESS_FALLBACK, NUMBER_STATUS, contactAddress, fmtDateTime } from "../lib/format";
 import { downloadCsv, guessField, parseCsv, readFile } from "../lib/csv";
-import { Badge, ErrorNote, Field, Spinner, useToast } from "../components/ui";
-import { CAMPAIGN_STATUS, GOALS } from "./Campaigns";
+import { Badge, ErrorNote, Field, Icon, ICONS, Spinner, useToast } from "../components/ui";
+import { CAMPAIGN_STATUS, GOALS, viewOf } from "./Campaigns";
 
 const STEPS = ["Basics", "Leads", "Messages", "Schedule", "Review"];
 
@@ -13,15 +13,18 @@ const STEPS = ["Basics", "Leads", "Messages", "Schedule", "Review"];
 // so nothing is lost when a campaign is finished later.
 function useAutosave(value, saveFn, enabled, delay = 800) {
   const [state, setState] = useState("idle"); // idle | pending | saving | saved | error
+  const [savedAt, setSavedAt] = useState(null);
   const latest = useRef({ value, saveFn, dirty: false });
   latest.current.value = value; latest.current.saveFn = saveFn;
   const first = useRef(true);
-  const flush = useCallback(async () => {
-    if (!latest.current.dirty) return;
+  const flush = useCallback(async (force) => {
+    if (!latest.current.dirty && !force) return true;
     latest.current.dirty = false;
     setState("saving");
     const ok = await latest.current.saveFn(latest.current.value);
     setState(ok === false ? "error" : "saved");
+    if (ok !== false) setSavedAt(new Date());
+    return ok !== false;
   }, []);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
@@ -35,18 +38,42 @@ function useAutosave(value, saveFn, enabled, delay = 800) {
     window.addEventListener("beforeunload", onLeave);
     return () => { window.removeEventListener("beforeunload", onLeave); flush(); }; // leaving the step saves too
   }, [flush]);
-  return state;
+  return { state, savedAt, saveNow: () => flush(true) };
 }
 
-function SaveState({ state }) {
-  if (state === "idle") return <span className="save-state muted small">Saved automatically as you go</span>;
-  const text = { pending: "Unsaved changes…", saving: "Saving…", saved: "✓ Draft saved", error: "Couldn’t save. Check your connection." }[state];
-  return <span className={`save-state small ${state === "error" ? "t-bad" : state === "saved" ? "t-ok" : "muted"}`} role="status">{text}</span>;
+// Steps whose changes are already stored the moment they happen (leads, review):
+// the button just confirms the draft is safe.
+function useStoredDraft() {
+  const [savedAt, setSavedAt] = useState(null);
+  return { state: savedAt ? "saved" : "idle", savedAt, saveNow: async () => { setSavedAt(new Date()); return true; } };
+}
+
+// "Save draft" button with a clear status: what was saved, and when.
+function SaveDraft({ auto }) {
+  const toast = useToast();
+  const { state, savedAt, saveNow } = auto;
+  const time = savedAt ? savedAt.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" }) : null;
+  const text = state === "pending" ? "Unsaved changes" : state === "saving" ? "Saving…" : state === "error" ? "Couldn’t save. Check your connection and try again."
+    : time ? `✓ Draft saved at ${time}` : "Changes save automatically";
+  async function click() { if (await saveNow()) toast("Draft saved. You can finish it later from Campaigns → Drafts."); }
+  return (
+    <span className="save-draft">
+      <button type="button" className="btn btn-sm" onClick={click} disabled={state === "saving"}>
+        <Icon d={ICONS.save} />Save draft
+      </button>
+      <span className={`small ${state === "error" ? "t-bad" : state === "saved" || (time && state !== "pending") ? "t-ok" : "muted"}`} role="status">{text}</span>
+    </span>
+  );
 }
 const DAYS = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [7, "Sun"]];
 const TONES = [["friendly", "Friendly"], ["professional", "Professional"], ["casual", "Casual"]];
 const LIMITS = { 1: 320, 2: 260, 3: 260 };
-const PLACEHOLDERS = [["{{firstName}}", "First name"], ["{{suburb}}", "Suburb"], ["{{address}}", "Address"], ["{{complex}}", "Complex"]];
+// Insert buttons above each message. {{address}} picks "unit 12 in Red Complex" or "14 Oak Street" automatically;
+// the single fields are there for anyone who wants to word it themselves.
+const PLACEHOLDERS = [
+  ["{{firstName}}", "First name"], ["{{lastName}}", "Surname"], ["{{suburb}}", "Suburb"], ["{{address}}", "Full address"],
+  ["{{unit}}", "Unit"], ["{{complex}}", "Complex"], ["{{streetNumber}}", "Street number"], ["{{street}}", "Street"],
+];
 const REJECT_LABEL = {
   invalid_number: "Not a valid mobile number", duplicate: "Repeated in the file", dnc: "On Do Not Contact",
   shotgun: "Another agent messaged them recently (Shotgun list)", already_in_campaign: "Already in this campaign",
@@ -75,7 +102,7 @@ export default function CampaignWizard() {
         supabase.from("profiles").select("id, full_name").eq("id", camp.agent_id).maybeSingle().then(must),
         supabase.rpc("list_whatsapp_numbers").then(must),
         supabase.from("leads").select("id", { count: "exact", head: true }).eq("campaign_id", id).then((r) => { if (r.error) throw r.error; return r.count ?? 0; }),
-        supabase.from("leads").select("contact:contacts(first_name, suburb, unit, complex, street_number, street)").eq("campaign_id", id).limit(200).then(must),
+        supabase.from("leads").select("contact:contacts(first_name, last_name, suburb, unit, complex, street_number, street)").eq("campaign_id", id).limit(200).then(must),
         supabase.from("uploads").select("*").eq("campaign_id", id).order("created_at", { ascending: false }).limit(1).then(must),
       ]);
       const byPos = Object.fromEntries((m ?? []).map((x) => [x.position, x]));
@@ -125,7 +152,7 @@ export default function CampaignWizard() {
     <>
       <div className="page-head">
         <div>
-          <p className="eyebrow"><Link to="/campaigns">Campaigns</Link> / {ctx.agent?.full_name ?? "Agent"}</p>
+          <p className="eyebrow"><Link to={`/campaigns?view=${viewOf(c.status)}`}>Campaigns · {c.status === "draft" ? "Drafts" : viewOf(c.status) === "live" ? "Live" : "Finished"}</Link> / {ctx.agent?.full_name ?? "Agent"}</p>
           <h1>{c.name} <Badge tone={CAMPAIGN_STATUS[c.status]?.[1]}>{CAMPAIGN_STATUS[c.status]?.[0]}</Badge></h1>
           {!editable && <p className="muted">{c.status === "draft" ? "You can view this draft but only its agent or an admin can change it." : "This campaign has launched, so it can’t be edited here."}</p>}
         </div>
@@ -150,7 +177,7 @@ export default function CampaignWizard() {
           if (!window.confirm(`Delete the draft “${c.name}” and its leads? This can’t be undone.`)) return;
           const { error } = await supabase.from("campaigns").delete().eq("id", c.id);
           if (error) return toast(error.message, "bad");
-          toast("Draft deleted"); nav("/campaigns");
+          toast("Draft deleted"); nav("/campaigns?view=draft");
         }} />}
     </>
   );
@@ -171,7 +198,7 @@ function StepBasics({ c, editable, save, next }) {
   const [f, setF] = useState({ name: c.name, goal: c.goal ?? "valuation", audience: c.brief?.audience ?? "", offer: c.brief?.offer ?? "", tone: c.brief?.tone ?? "friendly" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const toRow = (v) => ({ name: v.name.trim() || c.name, goal: v.goal, brief: { ...c.brief, goal: v.goal, audience: v.audience.trim(), offer: v.offer.trim(), tone: v.tone } });
-  const saveState = useAutosave(f, (v) => save(toRow(v), true), editable);
+  const auto = useAutosave(f, (v) => save(toRow(v), true), editable);
   async function saveAndNext() {
     if (!f.name.trim()) return;
     const ok = await save(toRow(f), true);
@@ -201,13 +228,14 @@ function StepBasics({ c, editable, save, next }) {
           </div>
         </div>
       </fieldset>
-      <Nav next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!f.name.trim()}>{editable && <SaveState state={saveState} />}</Nav>
+      <Nav next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!f.name.trim()}>{editable && <SaveDraft auto={auto} />}</Nav>
     </section>
   );
 }
 
 // ---------- 2. Leads ----------
 function StepLeads({ c, ctx, editable, reload, next, back }) {
+  const stored = useStoredDraft();
   const toast = useToast();
   const [file, setFile] = useState(null); // {name, headers, rows}
   const [map, setMap] = useState([]);
@@ -343,7 +371,7 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
           </div>
         </div>
       )}
-      <Nav back={back} next={next} />
+      <Nav back={back} next={next}>{editable && <SaveDraft auto={stored} />}</Nav>
     </section>
   );
 }
@@ -351,9 +379,10 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
 // ---------- 3. Messages ----------
 export function fill(body, sample, agentFirst) {
   const has = sample && (sample.first_name || sample.suburb || sample.complex || sample.street);
-  const s = has ? sample : { first_name: "Thandi", suburb: "Durbanville", unit: "12", complex: "Red Complex" };
+  const s = has ? sample : { first_name: "Thandi", last_name: "Mokoena", suburb: "Durbanville", unit: "12", complex: "Red Complex" };
   return (body || "")
     .replace(/\{\{\s*firstName\s*\}\}/g, s.first_name || "there")
+    .replace(/\{\{\s*lastName\s*\}\}/g, s.last_name || "")
     .replace(/\{\{\s*suburb\s*\}\}/g, s.suburb || "your area")
     .replace(/\{\{\s*address\s*\}\}/g, contactAddress(s) || ADDRESS_FALLBACK)
     .replace(/\{\{\s*complex\s*\}\}/g, s.complex || "your complex")
@@ -362,7 +391,7 @@ export function fill(body, sample, agentFirst) {
     .replace(/\{\{\s*street\s*\}\}/g, s.street || "your street")
     .replace(/\{\{\s*agentName\s*\}\}/g, agentFirst || "");
 }
-const TAGS = /^\{\{\s*(firstName|suburb|address|complex|unit|streetNumber|street)\s*\}\}$/;
+const TAGS = /^\{\{\s*(firstName|lastName|suburb|address|complex|unit|streetNumber|street)\s*\}\}$/;
 const unknownTags = (body) => (body.match(/\{\{[^}]*\}\}/g) ?? []).filter((t) => !TAGS.test(t));
 const usesAddress = (body) => /\{\{\s*(address|complex|unit|streetNumber|street)\s*\}\}/.test(body || "");
 
@@ -372,7 +401,7 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
   const [error, setError] = useState(null);
   const refs = [useRef(null), useRef(null), useRef(null)];
   const agentFirst = ctx.agent?.full_name?.split(" ")[0] ?? "";
-  const saveState = useAutosave(msgs, (v) => saveMessages(v), editable);
+  const auto = useAutosave(msgs, (v) => saveMessages(v), editable);
 
   const update = (i, fields) => setMsgs(msgs.map((m, j) => (j === i ? { ...m, ...fields } : m)));
   function insert(i, tag) {
@@ -473,7 +502,7 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
         <WhatsAppPreview msgs={msgs} sample={ctx.sample} agent={ctx.agent?.full_name} />
       </div>
       <Nav back={back} next={next} disabled={!allFilled}>
-        {editable && <SaveState state={saveState} />}
+        {editable && <SaveDraft auto={auto} />}
         {!allFilled && <span className="muted small" style={{ marginLeft: 10 }}>Fill in all three messages to continue.</span>}
       </Nav>
     </section>
@@ -504,7 +533,7 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
   const [s, setS] = useState({ days: c.schedule?.days ?? d.window_days ?? [1, 2, 3, 4, 5], start: c.schedule?.start ?? d.window_start ?? "07:30", end: c.schedule?.end ?? d.window_end ?? "18:00", start_date: c.schedule?.start_date ?? "" });
   const valid = s.days.length > 0 && s.start < s.end;
   const today = new Date().toISOString().slice(0, 10);
-  const saveState = useAutosave(s, (v) => (v.days.length && v.start < v.end ? save({ schedule: { ...v, timezone: d.timezone } }, true) : true), editable);
+  const auto = useAutosave(s, (v) => (v.days.length && v.start < v.end ? save({ schedule: { ...v, timezone: d.timezone } }, true) : true), editable);
   async function saveAndNext() {
     if (!valid) return;
     if (await save({ schedule: { ...s, timezone: d.timezone } }, true)) next();
@@ -532,13 +561,14 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
       </fieldset>
       {!valid && <div className="note note-warn">{s.days.length ? "The end time must be after the start time." : "Pick at least one day."}</div>}
       <p className="small muted">Each lead gets message 1, then message 2 {msgs[1]?.delay_days} days later and message 3 {msgs[2]?.delay_days} days after that, if they haven’t replied: about {total} days from first to last message.</p>
-      <Nav back={back} next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!valid}>{editable && <SaveState state={saveState} />}</Nav>
+      <Nav back={back} next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!valid}>{editable && <SaveDraft auto={auto} />}</Nav>
     </section>
   );
 }
 
 // ---------- 5. Review ----------
 function StepReview({ c, ctx, msgs, editable, go, onDelete }) {
+  const stored = useStoredDraft();
   const n = ctx.number;
   const checks = [
     { ok: !!c.name, label: "Campaign has a name", step: 1 },
@@ -567,7 +597,7 @@ function StepReview({ c, ctx, msgs, editable, go, onDelete }) {
       <div className="row wiz-nav">
         <button className="btn" onClick={() => go(4)}>Back</button>
         {editable && <button className="btn btn-danger" onClick={onDelete}>Delete draft</button>}
-        <span style={{ flex: 1 }} />
+        <span style={{ flex: 1 }}>{editable && <SaveDraft auto={stored} />}</span>
         <button className="btn btn-primary" disabled title="Launching opens after the lemlist test is approved">Launch campaign</button>
       </div>
     </section>
