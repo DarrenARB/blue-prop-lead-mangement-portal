@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { fmtDateTime, fmtPhone } from "../lib/format";
@@ -41,12 +41,16 @@ export default function Dnc() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // AI entries waiting for a check always sit on top. Once kept (or added by a person) they're just
+  // part of the list, newest first (rows already arrive newest first, and the sort keeps that order).
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return (rows ?? []).filter((r) => !onlyReview || r.needs_review);
     const digits = t.replace(/\D/g, "");
-    return (rows ?? []).filter((r) => !onlyReview || r.needs_review).filter((r) => (r.name ?? "").toLowerCase().includes(t) || (r.email ?? "").toLowerCase().includes(t) || (digits.length >= 3 && r.phone_e164.replace(/\D/g, "").includes(digits.replace(/^0/, ""))));
+    const match = (r) => !t || (r.name ?? "").toLowerCase().includes(t) || (r.email ?? "").toLowerCase().includes(t) || (digits.length >= 3 && r.phone_e164.replace(/\D/g, "").includes(digits.replace(/^0/, "")));
+    return (rows ?? []).filter((r) => (!onlyReview || r.needs_review) && match(r))
+      .sort((a, b) => (b.needs_review ? 1 : 0) - (a.needs_review ? 1 : 0));
   }, [rows, q, onlyReview]);
+  const firstChecked = shown.findIndex((r) => !r.needs_review);
   const review = (rows ?? []).filter((r) => r.needs_review).length;
 
   function exportCsv() {
@@ -86,18 +90,22 @@ export default function Dnc() {
           <table>
             <thead><tr><th>Person</th><th>Reason</th><th>Added</th><th></th></tr></thead>
             <tbody>
-              {shown.slice(0, 500).map((r) => (
-                <tr key={r.id}>
+              {shown.slice(0, 500).map((r, i) => (
+                <Fragment key={r.id}>
+                {i === 0 && r.needs_review && <tr className="group-row"><td colSpan={4}>Needs a check: added by the AI from a reply. Keep, or undo if the AI got it wrong.</td></tr>}
+                {i === firstChecked && firstChecked > 0 && <tr className="group-row"><td colSpan={4}>On the list, newest first</td></tr>}
+                <tr className={r.needs_review ? "row-review" : ""}>
                   <td>{r.name ? <div className="cell-title">{r.name}</div> : null}<div className={r.name ? "cell-sub mono" : "cell-title mono"}>{fmtPhone(r.phone_e164)}</div>{r.email && <div className="cell-sub">{r.email}</div>}</td>
                   <td>{r.reason || <span className="muted">—</span>} {r.needs_review && <Badge tone="warn">Needs a check</Badge>}<div className="cell-sub">{SOURCE[r.source] ?? r.source}</div></td>
                   <td className="small">{fmtDateTime(r.created_at)}<div className="cell-sub">{r.added_by_name ?? "System"}</div></td>
                   <td className="num">
                     <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
-                      {r.needs_review && mayRemove(r) && <button className="btn btn-sm" onClick={() => confirmAi(r)}>Keep</button>}
+                      {r.needs_review && mayRemove(r) && <button className="btn btn-sm btn-primary" onClick={() => confirmAi(r)}>Keep</button>}
                       {mayRemove(r) && <button className="btn btn-sm" onClick={() => setModal({ remove: r })}>{r.source === "ai_opt_out" ? "Undo" : "Remove"}</button>}
                     </div>
                   </td>
                 </tr>
+                </Fragment>
               ))}
             </tbody>
           </table>

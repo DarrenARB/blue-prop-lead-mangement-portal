@@ -552,3 +552,8 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
   .inbox-page .thread-actions .act { min-height: 48px; }
   .inbox-tools .agent-filter .select { min-width: 140px; }
 }
+
+/* Do Not Contact: AI entries waiting for a check are grouped on top */
+.group-row td { background: #F2F4FB; color: var(--brand); font-size: 13px; font-weight: 600; padding: 8px 12px; }
+.row-review td { background: #FFF8EC; }
+.row-review td:first-child { box-shadow: inset 3px 0 0 var(--warn, #B54708); }
