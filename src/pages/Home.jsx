@@ -25,7 +25,7 @@ export default function Home() {
       if (isAdmin) {
         out.people = await supabase.from("profiles").select("role, status").eq("status", "active").then(must);
         out.branches = await supabase.from("branches").select("id").is("archived_at", null).then(must);
-        out.plan = await supabase.from("plan_items").select("price, status").then(must);
+        out.plan = await supabase.from("plan_items").select("price, status").eq("scope", "in_scope").then(must);
       }
       if (profile.role === "agent" && profile.branch_id) {
         out.branch = await supabase.from("branches").select("name").eq("id", profile.branch_id).maybeSingle().then(must);

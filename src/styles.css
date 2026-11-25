@@ -246,3 +246,11 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .ac-busy { position: absolute; right: 14px; top: 13px; width: 18px; height: 18px; border: 2px solid var(--soft); border-top-color: var(--brand); border-radius: 50%; animation: spin .8s linear infinite; }
 .leaflet-container { font: inherit; }
 @media (max-width: 900px) { .map-grid { grid-template-columns: 1fr; } .map-wrap { border-right: 0; border-bottom: 1px solid var(--line); } .branch-map:not(.picker-map) { height: 380px !important; } .branch-list { max-height: none; } }
+
+/* ---------- tabs ---------- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; overflow-x: auto; }
+.tab { min-height: 44px; padding: 0 16px; border: 0; background: none; font-weight: 500; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--brand); border-bottom-color: var(--brand); }
+.tab-n { font-size: 12px; background: var(--soft); color: var(--muted); border-radius: 999px; padding: 1px 8px; }
+.tab.on .tab-n { background: var(--brand); color: #fff; }

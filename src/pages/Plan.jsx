@@ -24,13 +24,16 @@ export default function Plan() {
   const [basis, setBasis] = useState(readBasis);
   const [projectValue, setProjectValue] = useState(null);
   const [editValue, setEditValue] = useState(false);
+  const [extras, setExtras] = useState([]);
+  const [tab, setTab] = useState("scope"); // scope | extras
 
   const load = useCallback(async () => {
     try {
       const it = await supabase.from("plan_items").select("*").order("sort").then(must);
       const st = await supabase.from("settings").select("project_value").eq("id", 1).maybeSingle().then(must);
       setProjectValue(Number(st?.project_value ?? 0));
-      setItems(it);
+      setItems(it.filter((i) => i.scope !== "extra"));
+      setExtras(it.filter((i) => i.scope === "extra"));
       if (isFinLink) {
         setPayments(await supabase.from("plan_payments").select("*").order("received_on", { ascending: false }).then(must));
         setDraws(await supabase.from("plan_drawdowns").select("*").order("taken_on", { ascending: false }).then(must));
@@ -93,6 +96,19 @@ export default function Plan() {
           <button className="btn" onClick={() => setUpdate(true)}>Client update</button>
         </div>
       </div>
+
+      <div className="tabs" role="tablist" aria-label="Plan sections">
+        <button role="tab" aria-selected={tab === "scope"} className={`tab ${tab === "scope" ? "on" : ""}`} onClick={() => setTab("scope")}>
+          Agreed scope <span className="tab-n">{items.length}</span>
+        </button>
+        <button role="tab" aria-selected={tab === "extras"} className={`tab ${tab === "extras" ? "on" : ""}`} onClick={() => setTab("extras")}>
+          Out of scope extras <span className="tab-n">{extras.length}</span>
+        </button>
+      </div>
+
+      {tab === "extras" && <Extras extras={extras} scopeItems={items} isFinLink={isFinLink} onChanged={load} />}
+
+      {tab === "scope" && (<>
 
       {gap !== 0 && (
         <div className="banner" role="alert" style={{ alignItems: "center" }}>
@@ -226,10 +242,12 @@ export default function Plan() {
         {shown.length === 0 && <p className="muted" style={{ padding: 16 }}>Nothing matches this filter.</p>}
       </section>
 
+      </>)}
+
       {editValue && <ProjectValueModal value={projectValue} allocated={t.total} onClose={() => setEditValue(false)} onSaved={() => { setEditValue(false); load(); toast("Project value saved"); }} />}
       {edit && <EditItem item={edit} projectValue={projectValue} allocated={t.total} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); toast("Saved"); }} />}
       {money && <MoneyModal kind={money} onClose={() => setMoney(null)} onSaved={() => { setMoney(null); load(); toast(money === "payment" ? "Payment recorded" : "Drawdown recorded"); }} />}
-      {update && <ClientUpdate items={items} totals={t} onClose={() => setUpdate(false)} />}
+      {update && <ClientUpdate items={items} extras={extras} totals={t} onClose={() => setUpdate(false)} />}
     </>
   );
 }
@@ -343,7 +361,7 @@ function MoneyModal({ kind, onClose, onSaved }) {
   );
 }
 
-function ClientUpdate({ items, totals, onClose }) {
+function ClientUpdate({ items, extras = [], totals, onClose }) {
   const [since, setSince] = useState("");
   const inRange = (iso) => !since || (iso && iso.slice(0, 10) >= since);
   const line = (i) => `• ${i.code}  ${i.title}${Number(i.price) ? ` (${fmtR(i.price)})` : ""}`;
@@ -359,6 +377,11 @@ function ClientUpdate({ items, totals, onClose }) {
     built.length ? `Built and ready for your sign-off${since ? " (since " + fmtDate(since) + ")" : ""}:\n${built.map(line).join("\n")}` : null,
     signed.length ? `Signed off${since ? " (since " + fmtDate(since) + ")" : ""}:\n${signed.map(line).join("\n")}` : null,
     prog.length ? `In progress:\n${prog.map((i) => `${line(i)}, about ${i.progress}% done`).join("\n")}` : null,
+    (() => {
+      const ex = extras.filter((e) => e.billing !== "internal" && (e.status === "built" || e.status === "signed_off") && inRange(e.built_at));
+      if (!ex.length) return null;
+      return `Extra improvements added outside the agreed scope${since ? " (since " + fmtDate(since) + ")" : ""}:\n${ex.map((e) => `• ${e.code}  ${e.title}${e.billing === "chargeable" && Number(e.price) ? ` (${fmtR(e.price)}, quoted separately)` : " (no extra cost)"}`).join("\n")}`;
+    })(),
     "",
     "Please test the items awaiting sign-off and let us know if they can be signed off.",
   ].filter((x) => x !== null).join("\n\n").replace(/\n{3,}/g, "\n\n");
@@ -369,6 +392,173 @@ function ClientUpdate({ items, totals, onClose }) {
         <input id="cu-since" className="input" type="date" value={since} onChange={(e) => setSince(e.target.value)} style={{ maxWidth: 220 }} />
       </Field>
       <pre className="update">{text}</pre>
+    </Modal>
+  );
+}
+
+
+const BILLING = {
+  not_charged: ["No extra cost", "ok"],
+  chargeable: ["Chargeable", "warn"],
+  internal: ["Internal (Fin-Link)", "muted"],
+};
+
+// Out-of-scope extras: work added beyond the agreed stories. Same statuses; not part of the project value.
+function Extras({ extras, scopeItems, isFinLink, onChanged }) {
+  const toast = useToast();
+  const [edit, setEdit] = useState(null); // item or {} for new
+  const [filter, setFilter] = useState("all");
+  const by = (st) => extras.filter((e) => e.status === st);
+  const delivered = extras.filter((e) => e.status === "built" || e.status === "signed_off");
+  const chargeable = extras.filter((e) => e.billing === "chargeable");
+  const chargeableValue = chargeable.reduce((s, e) => s + Number(e.price || 0), 0);
+  const shown = extras.filter((e) => filter === "all" || e.status === filter);
+  const counts = { all: extras.length, not_started: by("not_started").length, in_progress: by("in_progress").length, built: by("built").length, signed_off: by("signed_off").length };
+
+  return (
+    <>
+      <section className="card">
+        <p className="muted" style={{ marginBottom: 14 }}>
+          Improvements added beyond the {scopeItems.length} agreed stories to make the portal easier to use or more robust. They’re tracked with the same statuses but sit outside the project value. Fin-Link logs each one as it’s built.
+        </p>
+        <div className="grid g4">
+          <div className="kpi hero"><div className="kpi-label">Extras</div><div className="kpi-value">{extras.length}</div><div className="kpi-sub">Outside the agreed scope</div></div>
+          <div className="kpi"><div className="kpi-label">Delivered</div><div className="kpi-value" style={{ color: "var(--ok)" }}>{delivered.length}</div><div className="kpi-sub">{counts.signed_off} signed off · {counts.built} awaiting sign-off</div></div>
+          <div className="kpi"><div className="kpi-label">In progress or planned</div><div className="kpi-value">{counts.in_progress + counts.not_started}</div><div className="kpi-sub">{counts.in_progress} in progress · {counts.not_started} planned</div></div>
+          <div className="kpi"><div className="kpi-label">Chargeable</div><div className="kpi-value">{fmtR(chargeableValue)}</div><div className="kpi-sub">{chargeable.length} item{chargeable.length === 1 ? "" : "s"} · quoted separately</div></div>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div className="filters" role="group" aria-label="Filter by status">
+            {STATUS_FILTERS.map(([k, l]) => (
+              <button key={k} className={`chip ${filter === k ? "on" : ""}`} onClick={() => setFilter(k)}>{l} · {counts[k]}</button>
+            ))}
+          </div>
+          {isFinLink && <button className="btn btn-primary btn-sm" onClick={() => setEdit({})}><Icon d={ICONS.plus} className="ic ic-s" />Add extra</button>}
+        </div>
+        {shown.length === 0 ? <p className="muted" style={{ padding: 16 }}>{extras.length ? "Nothing matches this filter." : "No extras yet."}</p> : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th style={{ width: 84 }}>ID</th><th>What it adds</th><th>Builds on</th><th>Cost</th><th>Status</th>{isFinLink && <th></th>}</tr></thead>
+              <tbody>
+                {shown.map((e) => (
+                  <tr key={e.code}>
+                    <td className="code">{e.code}</td>
+                    <td>
+                      <div className="cell-title">{e.title}</div>
+                      <div className="cell-sub">{e.detail}</div>
+                      {e.benefit && <div className="cell-sub" style={{ marginTop: 3 }}><strong style={{ fontWeight: 500, color: "var(--ink)" }}>Why:</strong> {e.benefit}</div>}
+                      {e.notes && <div className="cell-sub" style={{ color: "var(--brand)", marginTop: 2 }}>Note: {e.notes}</div>}
+                      <div className="cell-sub" style={{ marginTop: 3 }}>Added {fmtDate(e.added_at)}{e.added_by ? ` by ${e.added_by}` : ""}</div>
+                    </td>
+                    <td className="code">{e.related_code || "—"}</td>
+                    <td><Badge tone={BILLING[e.billing]?.[1]}>{BILLING[e.billing]?.[0]}</Badge>{e.billing === "chargeable" && Number(e.price) > 0 && <div className="cell-sub">{fmtR(e.price)}</div>}</td>
+                    <td>
+                      <Badge tone={PLAN_STATUS[e.status][1]}>{PLAN_STATUS[e.status][0]}{e.status === "in_progress" ? ` · ${e.progress}%` : ""}</Badge>
+                      {e.signed_off_at ? <div className="cell-sub">Signed off {fmtDate(e.signed_off_at)}</div> : e.built_at ? <div className="cell-sub">Built {fmtDate(e.built_at)}</div> : null}
+                    </td>
+                    {isFinLink && <td className="num"><button className="btn btn-sm" onClick={() => setEdit(e)}>Update</button></td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {edit && <ExtraModal item={edit} scopeItems={scopeItems} onClose={() => setEdit(null)} onSaved={(msg) => { setEdit(null); onChanged(); toast(msg); }} />}
+    </>
+  );
+}
+
+function ExtraModal({ item, scopeItems, onClose, onSaved }) {
+  const isNew = !item.code;
+  const [f, setF] = useState({
+    title: item.title ?? "", detail: item.detail ?? "", benefit: item.benefit ?? "",
+    related_code: item.related_code ?? "", billing: item.billing ?? "not_charged", price: item.price ?? 0,
+    status: item.status ?? "not_started", progress: item.progress ?? 0, notes: item.notes ?? "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  async function submit(e) {
+    e.preventDefault();
+    setError(null);
+    if (!f.title.trim() || !f.detail.trim()) return setError("Give it a name and say what it does.");
+    setBusy(true);
+    const row = {
+      title: f.title.trim(), detail: f.detail.trim(), benefit: f.benefit.trim() || null,
+      related_code: f.related_code || null, billing: f.billing,
+      price: f.billing === "chargeable" ? Number(f.price) || 0 : 0,
+      status: f.status,
+      progress: f.status === "in_progress" ? Math.max(0, Math.min(99, Number(f.progress) || 0)) : f.status === "not_started" ? 0 : 100,
+      notes: f.notes.trim() || null,
+    };
+    const q = isNew
+      ? supabase.from("plan_items").insert({ ...row, scope: "extra", grp: "extra" })
+      : supabase.from("plan_items").update(row).eq("code", item.code);
+    const { error } = await q;
+    setBusy(false);
+    if (error) return setError(error);
+    onSaved(isNew ? "Extra added" : "Saved");
+  }
+
+  async function remove() {
+    const { error } = await supabase.from("plan_items").delete().eq("code", item.code);
+    if (error) return setError(error);
+    onSaved("Extra removed");
+  }
+
+  return (
+    <Modal wide title={isNew ? "Add an out-of-scope extra" : `${item.code} · ${item.title}`} sub="Something added beyond the agreed stories. It gets the next EXT number automatically." onClose={onClose}
+      footer={<>
+        {!isNew && <button className="btn btn-danger" style={{ marginRight: "auto" }} onClick={remove}>Remove</button>}
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" form="extra-form" disabled={busy}>{busy ? "Saving…" : isNew ? "Add extra" : "Save"}</button>
+      </>}>
+      <form id="extra-form" className="stack" onSubmit={submit}>
+        <Field label="Name" id="x-title"><input id="x-title" className="input" value={f.title} onChange={set("title")} placeholder="Bulk import of agents from CSV" required /></Field>
+        <Field label="What it does" id="x-detail"><textarea id="x-detail" className="textarea" value={f.detail} onChange={set("detail")} required /></Field>
+        <Field label="Why it was added" id="x-benefit" hint="The value to Blue PROP: easier to use, faster, safer…"><textarea id="x-benefit" className="textarea" style={{ minHeight: 64 }} value={f.benefit} onChange={set("benefit")} /></Field>
+        <div className="grid g2">
+          <Field label="Builds on story (optional)" id="x-rel">
+            <select id="x-rel" className="select" value={f.related_code} onChange={set("related_code")}>
+              <option value="">None</option>
+              {scopeItems.map((i) => <option key={i.code} value={i.code}>{i.code} · {i.title}</option>)}
+            </select>
+          </Field>
+          <Field label="Cost to the client" id="x-bill">
+            <select id="x-bill" className="select" value={f.billing} onChange={set("billing")}>
+              <option value="not_charged">No extra cost</option>
+              <option value="chargeable">Chargeable (quoted separately)</option>
+              <option value="internal">Internal (Fin-Link only)</option>
+            </select>
+          </Field>
+        </div>
+        {f.billing === "chargeable" && (
+          <Field label="Value (R, excl. VAT)" id="x-price" hint="Not part of the project value. Shown in client updates as quoted separately.">
+            <input id="x-price" className="input" type="number" min="0" step="50" value={f.price} onChange={set("price")} />
+          </Field>
+        )}
+        <div className="seg">
+          {Object.entries(PLAN_STATUS).map(([k, [l]]) => (
+            <label key={k} className={f.status === k ? "on" : ""}>
+              <input type="radio" name="x-st" value={k} checked={f.status === k} onChange={() => setF({ ...f, status: k })} />
+              <span className="t">{l}</span>
+            </label>
+          ))}
+        </div>
+        {f.status === "in_progress" && (
+          <Field label={`How far along? ${f.progress}%`} id="x-prog">
+            <input id="x-prog" type="range" min="0" max="95" step="5" value={f.progress} onChange={set("progress")} />
+          </Field>
+        )}
+        <Field label="Note (optional)" id="x-notes"><input id="x-notes" className="input" value={f.notes} onChange={set("notes")} /></Field>
+        <ErrorNote error={error} />
+      </form>
     </Modal>
   );
 }
