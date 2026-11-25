@@ -4,6 +4,7 @@ import { must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ago } from "../lib/format";
 import { Badge, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner } from "../components/ui";
+import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
 
 export const CAMPAIGN_STATUS = {
   draft: ["Draft", "muted"], launching: ["Launching", "brand"], running: ["Running", "ok"], paused: ["Paused", "warn"],
@@ -24,6 +25,7 @@ export default function Campaigns() {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("all");
   const [creating, setCreating] = useState(false);
+  const [agentF, setAgentF] = useAgentFilter();
   const canCreate = isAdmin || profile.role === "agent";
 
   useEffect(() => {
@@ -42,8 +44,9 @@ export default function Campaigns() {
     })();
   }, []);
 
-  const shown = useMemo(() => (rows ?? []).filter((r) => filter === "all" || (filter === "live" ? ["running", "paused", "launching"].includes(r.status) : r.status === filter)), [rows, filter]);
-  const n = (s) => (rows ?? []).filter((r) => (s === "live" ? ["running", "paused", "launching"].includes(r.status) : r.status === s)).length;
+  const mineRows = useMemo(() => (rows ?? []).filter((r) => !agentF || r.agent_id === agentF), [rows, agentF]);
+  const shown = useMemo(() => mineRows.filter((r) => filter === "all" || (filter === "live" ? ["running", "paused", "launching"].includes(r.status) : r.status === filter)), [mineRows, filter]);
+  const n = (s) => mineRows.filter((r) => (s === "live" ? ["running", "paused", "launching"].includes(r.status) : r.status === s)).length;
 
   return (
     <>
@@ -58,8 +61,9 @@ export default function Campaigns() {
 
       <div className="note note-info">Launching is switched on once the first lemlist test is approved. Until then you can build campaigns end to end (leads, AI messages, schedule) and they stay as drafts.</div>
 
+      <div className="list-tools"><span /><AgentFilter value={agentF} onChange={setAgentF} /></div>
       <div className="tabs" role="tablist" aria-label="Filter campaigns">
-        {[["all", "All", rows?.length ?? 0], ["draft", "Drafts", n("draft")], ["live", "Live", n("live")], ["ended", "Ended", n("ended")]].map(([k, l, c]) => (
+        {[["all", "All", mineRows.length], ["draft", "Drafts", n("draft")], ["live", "Live", n("live")], ["ended", "Ended", n("ended")]].map(([k, l, c]) => (
           <button key={k} role="tab" aria-selected={filter === k} className={`tab ${filter === k ? "active" : ""}`} onClick={() => setFilter(k)}>{l} <span className="tab-n">{c}</span></button>
         ))}
       </div>

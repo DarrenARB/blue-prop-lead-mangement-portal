@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { fmtDateTime, fmtPhone } from "../lib/format";
 import { Badge, Empty, ErrorNote, Spinner, useToast } from "../components/ui";
 import { notReady, personName, scoreTone } from "./Inbox";
+import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
 
 export default function HotLeads() {
   const { profile, isAdmin } = useAuth();
@@ -15,6 +16,7 @@ export default function HotLeads() {
   const [selected, setSelected] = useState(new Set());
   const [busy, setBusy] = useState(false);
   const [threshold, setThreshold] = useState(70);
+  const [agentF, setAgentF] = useAgentFilter();
 
   const load = useCallback(async () => {
     try {
@@ -31,7 +33,8 @@ export default function HotLeads() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const shown = useMemo(() => (rows ?? []).filter((r) => (tab === "new" ? !r.exported_at : tab === "exported" ? r.exported_at : true)), [rows, tab]);
+  const mine = useMemo(() => (rows ?? []).filter((r) => !agentF || r.agent_id === agentF), [rows, agentF]);
+  const shown = useMemo(() => mine.filter((r) => (tab === "new" ? !r.exported_at : tab === "exported" ? r.exported_at : true)), [mine, tab]);
   const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const allOn = shown.length > 0 && shown.every((r) => selected.has(r.id));
 
@@ -63,7 +66,7 @@ export default function HotLeads() {
     } catch (e) { toast(e.message, "bad"); }
     finally { setBusy(false); }
   }
-  const newCount = (rows ?? []).filter((r) => !r.exported_at).length;
+  const newCount = mine.filter((r) => !r.exported_at).length;
 
   return (
     <>
@@ -79,10 +82,11 @@ export default function HotLeads() {
         </div>
       </div>
       <div className="tabs" role="tablist">
-        {[["new", "Not exported", newCount], ["exported", "Exported", (rows?.length ?? 0) - newCount], ["all", "All", rows?.length ?? 0]].map(([k, l, n]) => (
+        {[["new", "Not exported", newCount], ["exported", "Exported", mine.length - newCount], ["all", "All", mine.length]].map(([k, l, n]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => { setTab(k); setSelected(new Set()); }}>{l} <span className="tab-n">{n}</span></button>
         ))}
       </div>
+      <div className="list-tools"><span /><AgentFilter value={agentF} onChange={(v) => { setAgentF(v); setSelected(new Set()); }} /></div>
       <ErrorNote error={error} />
       {!rows && !error ? <Spinner /> : rows && shown.length === 0 ? (
         <div className="card"><Empty title={rows.length ? "Nothing here" : "No hot leads yet"}>{rows.length ? "Try another tab." : "When someone replies with real interest, the AI moves them here automatically."}</Empty></div>

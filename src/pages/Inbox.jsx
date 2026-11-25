@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { ago, fmtDateTime, fmtPhone } from "../lib/format";
 import { Badge, CopyButton, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
 import { DATE_TYPES } from "./Dates";
+import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
 
 export const notReady = (toast, what) => toast(`${what} isn’t working yet. It’s switched on in a later stage.`, "warn");
 export const scoreTone = (s, t = 70) => (s == null ? "muted" : s >= t ? "ok" : s >= 40 ? "warn" : "muted");
@@ -19,6 +20,7 @@ export default function Inbox() {
   const [q, setQ] = useState("");
   const [openId, setOpenId] = useState(null);
   const [busy, setBusy] = useState("");
+  const [agentF, setAgentF] = useAgentFilter();
 
   const load = useCallback(async () => {
     try {
@@ -39,15 +41,16 @@ export default function Inbox() {
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     return (convs ?? []).filter((c) => {
+      if (agentF && c.agent_id !== agentF) return false;
       if (filter === "unread" && !c.unread) return false;
       if (filter === "hot" && !c.hot?.active) return false;
       if (filter === "unscored" && c.score != null) return false;
       if (!t) return true;
       return personName(c.contact).toLowerCase().includes(t) || (c.last_preview ?? "").toLowerCase().includes(t) || (c.contact?.suburb ?? "").toLowerCase().includes(t);
     });
-  }, [convs, filter, q]);
+  }, [convs, filter, q, agentF]);
   const open = convs?.find((c) => c.id === openId) ?? null;
-  const count = (f) => (convs ?? []).filter((c) => (f === "unread" ? c.unread : f === "hot" ? c.hot?.active : c.score == null)).length;
+  const count = (f) => (convs ?? []).filter((c) => !agentF || c.agent_id === agentF).filter((c) => (f === "unread" ? c.unread : f === "hot" ? c.hot?.active : c.score == null)).length;
   const hasSamples = (convs ?? []).some((c) => c.is_sample);
 
   async function samples(load_) {
@@ -78,8 +81,9 @@ export default function Inbox() {
       </div>
 
 
+      <div className="list-tools"><span /><AgentFilter value={agentF} onChange={(v) => { setAgentF(v); setOpenId(null); }} /></div>
       <div className="tabs" role="tablist" aria-label="Filter conversations">
-        {[["all", "All", convs?.length ?? 0], ["unread", "Unread", count("unread")], ["hot", "Hot", count("hot")], ["unscored", "Not scored", count("unscored")]].map(([k, l, n]) => (
+        {[["all", "All", (convs ?? []).filter((c) => !agentF || c.agent_id === agentF).length], ["unread", "Unread", count("unread")], ["hot", "Hot", count("hot")], ["unscored", "Not scored", count("unscored")]].map(([k, l, n]) => (
           <button key={k} role="tab" aria-selected={filter === k} className={`tab ${filter === k ? "active" : ""}`} onClick={() => setFilter(k)}>{l} <span className="tab-n">{n}</span></button>
         ))}
       </div>

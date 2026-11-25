@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { fmtDate } from "../lib/format";
 import { Badge, CopyButton, Empty, ErrorNote, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
 import { DateModal, personName } from "./Inbox";
+import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
 
 export const DATE_TYPES = {
   followup: { label: "Follow-up", tone: "brand" },
@@ -45,6 +46,7 @@ export default function Dates() {
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null);
   const [suggest, setSuggest] = useState(null);
+  const [agentF, setAgentF] = useAgentFilter();
   const readOnly = profile.role === "owner";
 
   const load = useCallback(async () => {
@@ -58,7 +60,7 @@ export default function Dates() {
     } catch (e) { setError(e); }
   }, []);
   useEffect(() => { load(); }, [load]);
-  const b = useMemo(() => bucketDates(rows ?? []), [rows]);
+  const b = useMemo(() => bucketDates((rows ?? []).filter((r) => !agentF || r.agent_id === agentF)), [rows, agentF]);
 
   async function done(d) {
     // yearly dates: mark this year's one done by moving the base date on a year
@@ -126,6 +128,7 @@ export default function Dates() {
         </div>
         {!readOnly && <button className="btn btn-primary" onClick={() => setModal({})}><Icon d={ICONS.plus} />Add a date</button>}
       </div>
+      <div className="list-tools"><span /><AgentFilter value={agentF} onChange={setAgentF} /></div>
       <ErrorNote error={error} />
       {!rows && !error ? <Spinner /> : rows && rows.length === 0 ? (
         <div className="card"><Empty title="Nothing scheduled">Set a follow-up from any conversation in the Inbox, or add a date here.</Empty></div>
