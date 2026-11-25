@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
 import { must, supabase } from "../lib/supabase";
 import { ErrorNote, Field, Spinner, useToast } from "../components/ui";
+import { useAuth } from "../lib/auth";
 
 const DAYS = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [7, "Sun"]];
 
 export default function Rules() {
   const toast = useToast();
+  const { isSuperAdmin } = useAuth();
   const [f, setF] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    supabase.from("settings").select("hot_threshold, shotgun_months, window_days, window_start, window_end, timezone").eq("id", 1).single().then(must).then(setF).catch(setError);
+    supabase.from("settings").select("hot_threshold, shotgun_months, window_days, window_start, window_end, timezone, email_enabled").eq("id", 1).single().then(must).then(setF).catch(setError);
   }, []);
 
   async function save(e) {
@@ -70,6 +72,38 @@ export default function Rules() {
         </section>
         <div><button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save rules"}</button></div>
       </form>
+      {isSuperAdmin && <EmailSwitch on={f.email_enabled} onChange={(v) => setF({ ...f, email_enabled: v })} />}
     </>
+  );
+}
+
+// Super Admins only: switches "Forgot password" from "tell the admin" to "email me a reset link".
+function EmailSwitch({ on, onChange }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  async function flip() {
+    if (!on && !window.confirm("Only switch this on once email sending is set up in Supabase (custom SMTP and the portal’s web address added to the allowed redirect URLs). Switch on reset emails now?")) return;
+    setBusy(true);
+    const { error } = await supabase.from("settings").update({ email_enabled: !on }).eq("id", 1);
+    setBusy(false);
+    if (error) return toast(error.message, "bad");
+    onChange(!on);
+    toast(!on ? "Reset emails switched on" : "Reset emails switched off: requests go to admins");
+  }
+  return (
+    <section className="card stack" style={{ marginTop: 16 }}>
+      <div className="row spread">
+        <h2>Password reset emails <span className="badge b-muted" style={{ marginLeft: 6 }}>Super Admin</span></h2>
+      </div>
+      <p className="muted small">
+        {on
+          ? "On: “Forgot your password?” emails the person a link to choose a new password."
+          : "Off: “Forgot your password?” tells the admins, who reset it on People and share a temporary password. Switch on once email sending is set up."}
+      </p>
+      <label className="row small" style={{ gap: 8 }}>
+        <input type="checkbox" checked={!!on} onChange={flip} disabled={busy} />
+        Send password reset emails
+      </label>
+    </section>
   );
 }

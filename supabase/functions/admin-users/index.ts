@@ -235,6 +235,8 @@ Deno.serve(async (req) => {
       const { error } = await db.auth.admin.updateUserById(target.id, { password });
       if (error) throw new HttpError(400, error.message);
       await db.from("profiles").update({ must_change_password: true, updated_at: new Date().toISOString() }).eq("id", target.id);
+      // any "forgot password" requests from this person are now handled
+      await db.from("password_help_requests").update({ resolved_at: new Date().toISOString(), resolved_by: me.id || null }).eq("profile_id", target.id).is("resolved_at", null);
       await audit(me, "people", `Reset the password for ${target.full_name}`, { user_id: target.id });
       return json({ ok: true, temp_password: password });
     }

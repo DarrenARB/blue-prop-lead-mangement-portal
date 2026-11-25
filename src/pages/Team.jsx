@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
-import { NUMBER_STATUS, ROLE_LABEL, fmtPhone } from "../lib/format";
+import { NUMBER_STATUS, ROLE_LABEL, ago, fmtPhone } from "../lib/format";
 import { Badge, CopyButton, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
 
 const ROLE_HELP = {
@@ -22,13 +22,14 @@ export default function Team() {
 
   const load = useCallback(async () => {
     try {
-      const [branches, people, owners, numbers] = await Promise.all([
+      const [branches, people, owners, numbers, help] = await Promise.all([
         supabase.from("branches").select("*").order("name").then(must),
         supabase.from("profiles").select("*").order("full_name").then(must),
         supabase.from("branch_owners").select("*").then(must),
         supabase.rpc("list_whatsapp_numbers").then(must),
+        supabase.from("password_help_requests").select("profile_id, requested_at").is("resolved_at", null).order("requested_at").then(must).catch(() => []),
       ]);
-      setData({ branches, people, owners, numbers });
+      setData({ branches, people, owners, numbers, help: help ?? [] });
     } catch (e) { setError(e); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -49,6 +50,7 @@ export default function Team() {
       }
       else toast(action === "deactivate" ? `${person.full_name} deactivated` : `${person.full_name} reactivated`);
       setConfirm(null); load();
+      window.dispatchEvent(new Event("bp:counts-changed"));
     } catch (e) { toast(e.message, "bad"); }
   }
 
@@ -62,6 +64,28 @@ export default function Team() {
         </div>
         <button className="btn btn-primary" onClick={() => setPersonModal({ mode: "invite" })}><Icon d={ICONS.plus} />Invite someone</button>
       </div>
+
+      {/* ---------- Forgot-password requests ---------- */}
+      {data.help.length > 0 && (() => {
+        const asked = data.help.map((h) => ({ ...h, person: data.people.find((p) => p.id === h.profile_id) })).filter((h) => h.person);
+        return (
+          <div className="banner banner-info" role="status">
+            <Icon d={ICONS.key} />
+            <div className="banner-text">
+              <strong>{asked.length === 1 ? "1 person forgot their password" : `${asked.length} people forgot their password`}</strong>
+              <div className="small">Reset it and send them the temporary password. Once emails are switched on, they’ll get a reset link by themselves.</div>
+              <ul className="help-list">
+                {asked.map((h) => (
+                  <li key={h.profile_id}>
+                    <span><strong>{h.person.full_name}</strong> <span className="muted">· {h.person.email} · asked {ago(h.requested_at)}</span></span>
+                    {h.person.id !== me.id && <button className="btn btn-sm btn-primary" onClick={() => setConfirm({ action: "reset_password", person: h.person })}>Reset password</button>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---------- People ---------- */}
       <section className="card">

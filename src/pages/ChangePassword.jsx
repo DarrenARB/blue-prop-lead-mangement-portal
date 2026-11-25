@@ -4,8 +4,8 @@ import { forceSignOut, isSessionGone, useAuth } from "../lib/auth";
 import AuthShell from "../components/AuthShell";
 import { ErrorNote, Field, PasswordInput, useToast } from "../components/ui";
 
-export default function ChangePassword({ forced }) {
-  const { profile, refreshProfile, signOut } = useAuth();
+export default function ChangePassword({ forced, recovery }) {
+  const { profile, refreshProfile, signOut, endRecovery } = useAuth();
   const toast = useToast();
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -18,7 +18,7 @@ export default function ChangePassword({ forced }) {
     setError(null);
     if (pw.length < 10) return setError("Use at least 10 characters.");
     if (pw !== pw2) return setError("The two passwords don’t match.");
-    if (/^Bp-/.test(pw)) return setError("Choose your own password, not the temporary one.");
+    if (/^Bp-/.test(pw)) return setError("Choose your own password, not a temporary one.");
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: pw });
     if (error) {
@@ -31,6 +31,7 @@ export default function ChangePassword({ forced }) {
     }
     await supabase.rpc("mark_password_changed");
     await refreshProfile();
+    if (recovery) endRecovery();
     setBusy(false); setPw(""); setPw2("");
     toast("Password changed");
   }
@@ -50,8 +51,8 @@ export default function ChangePassword({ forced }) {
     <form className={forced ? "auth-card" : "card stack"} style={forced ? undefined : { maxWidth: 480 }} onSubmit={submit}>
       {forced && (
         <div>
-          <h2>Welcome, {profile.full_name.split(" ")[0]}</h2>
-          <p className="muted" style={{ marginTop: 6 }}>You signed in with a temporary password. Choose your own to continue.</p>
+          <h2>{recovery ? "Choose a new password" : `Welcome, ${profile.full_name.split(" ")[0]}`}</h2>
+          <p className="muted" style={{ marginTop: 6 }}>{recovery ? `For ${profile.email}. You’ll stay signed in once it’s saved.` : "You signed in with a temporary password. Choose your own to continue."}</p>
         </div>
       )}
       <Field label="New password" id="np" hint="At least 10 characters."><PasswordInput id="np" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></Field>

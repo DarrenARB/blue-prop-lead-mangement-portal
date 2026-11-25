@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined); // undefined = still loading
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState(null);
+  const [recovery, setRecovery] = useState(false); // arrived from a "reset your password" email link
 
   const loadProfile = useCallback(async (sess) => {
     if (!sess) { setProfile(null); return; }
@@ -23,6 +24,7 @@ export function AuthProvider({ children }) {
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess);
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") loadProfile(sess);
     });
     return () => sub.subscription.unsubscribe();
@@ -35,6 +37,12 @@ export function AuthProvider({ children }) {
     loading: session === undefined || (session && !profile && !profileError),
     refreshProfile: () => loadProfile(session),
     signOut: () => forceSignOut(),
+    recovery,
+    endRecovery: () => {
+      setRecovery(false);
+      // tidy the one-time ?code=… from the address bar
+      if (window.location.search) window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    },
     isAdmin: !!profile && (profile.role === "admin" || profile.role === "superadmin" || profile.is_fin_link),
     isSuperAdmin: !!profile && (profile.role === "superadmin" || profile.is_fin_link),
     isFinLink: !!profile?.is_fin_link,

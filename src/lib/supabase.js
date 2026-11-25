@@ -4,7 +4,8 @@ export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 export const supabase = createClient(SUPABASE_URL, KEY, {
-  auth: { persistSession: true, autoRefreshToken: true },
+  // PKCE: password-reset links come back as ?code=… which works alongside the #/ page routes
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
 });
 
 // Calls one of our Edge Functions and turns error bodies into readable messages.

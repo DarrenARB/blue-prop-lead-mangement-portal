@@ -45,18 +45,20 @@ export default function Layout() {
   // Unread conversations and dates due, refreshed with the page
   const [unread, setUnread] = useState(0);
   const [due, setDue] = useState(0);
+  const [pwHelp, setPwHelp] = useState(0);
   useEffect(() => {
     let alive = true;
     const refresh = () => {
       const today = new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10);
       supabase.from("conversations").select("id", { count: "exact", head: true }).eq("unread", true).eq("archived", false).then(({ count }) => alive && setUnread(count ?? 0));
+      if (isAdmin) supabase.from("password_help_requests").select("id", { count: "exact", head: true }).is("resolved_at", null).then(({ count }) => alive && setPwHelp(count ?? 0));
       if (profile.role !== "owner") supabase.from("key_dates").select("id", { count: "exact", head: true }).is("done_at", null).eq("yearly", false).eq("agent_id", profile.id).lte("due_on", today).then(({ count }) => alive && setDue(count ?? 0));
     };
     refresh();
     const t = setInterval(refresh, 30000); // new replies show up without reloading
     window.addEventListener("bp:counts-changed", refresh); // e.g. a conversation was just read
     return () => { alive = false; clearInterval(t); window.removeEventListener("bp:counts-changed", refresh); };
-  }, [loc.pathname, profile.id, profile.role]);
+  }, [loc.pathname, profile.id, profile.role, isAdmin]);
 
   const sections = [
     { key: "main", items: [{ to: "/", label: "Home", icon: ICONS.home, show: true }] },
@@ -73,7 +75,7 @@ export default function Layout() {
     ] },
     { key: "admin", title: "Admin", items: [
       { to: "/branches", label: "Branches", icon: ICONS.map, show: isAdmin },
-      { to: "/team", label: "People", icon: ICONS.team, show: isAdmin },
+      { to: "/team", label: "People", icon: ICONS.team, show: isAdmin, badge: pwHelp ? { n: pwHelp, tone: "warn", label: `${pwHelp} forgot-password request${pwHelp > 1 ? "s" : ""}` } : null },
       { to: "/lemlist", label: isAdmin ? "lemlist & numbers" : "WhatsApp numbers", icon: ICONS.phone, show: canSeeNumbers,
         badge: attention.bad || attention.phone ? { n: attention.bad + attention.phone, tone: attention.bad ? "bad" : "warn",
           label: [attention.bad && `${attention.bad} number${attention.bad > 1 ? "s" : ""} need attention`, attention.phone && `${attention.phone} phone number${attention.phone > 1 ? "s" : ""} needed`].filter(Boolean).join(", ") } : null },

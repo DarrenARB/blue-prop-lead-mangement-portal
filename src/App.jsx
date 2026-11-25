@@ -23,7 +23,7 @@ import Shotgun from "./pages/Shotgun";
 import Rules from "./pages/Rules";
 
 export default function App() {
-  const { session, profile, profileError, loading, isAdmin, canSeeNumbers, signOut } = useAuth();
+  const { session, profile, profileError, loading, isAdmin, canSeeNumbers, signOut, recovery } = useAuth();
   const [setUp, setSetUp] = useState(null);
 
   useEffect(() => {
@@ -45,6 +45,7 @@ export default function App() {
       </div>
     );
   }
+  if (recovery) return <ChangePassword forced recovery />;
   if (profile.must_change_password) return <ChangePassword forced />;
 
   return (
