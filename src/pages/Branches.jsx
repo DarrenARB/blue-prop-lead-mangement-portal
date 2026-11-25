@@ -170,19 +170,17 @@ function BranchModal({ branch, onClose, onSaved }) {
       <form id="branch-form" className="stack" onSubmit={submit}>
         <Field label="Branch name" id="b-name"><input id="b-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ferndale" required /></Field>
 
-        <LocationPicker value={loc} onChange={setLoc} icon={icon} color={color} radiusKm={Number(radius)} />
-
-        <div className="grid g2">
+        <LocationPicker value={loc} onChange={setLoc} icon={icon} color={color} radiusKm={Number(radius)}>
+          <Field label="Town or city" id="b-city" hint="Shown on the branch card.">
+            <input id="b-city" className="input" value={loc.city ?? ""} onChange={(e) => setLoc({ ...loc, city: e.target.value || null })} placeholder="Randburg" />
+          </Field>
           <Field label="Province (required)" id="b-prov" hint={loc.province && loc.lat != null ? "Filled in from the address. Change it if it’s wrong." : "Filled in automatically when you pick an address or drop the pin."}>
             <select id="b-prov" className="select" value={PROVINCES.includes(loc.province) ? loc.province : ""} onChange={(e) => setLoc({ ...loc, province: e.target.value || null })} required>
               <option value="">Choose a province…</option>
               {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </Field>
-          <Field label="Town or city" id="b-city" hint="Shown on the branch card.">
-            <input id="b-city" className="input" value={loc.city ?? ""} onChange={(e) => setLoc({ ...loc, city: e.target.value || null })} placeholder="Randburg" />
-          </Field>
-        </div>
+        </LocationPicker>
 
         <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend style={{ fontWeight: 500, fontSize: 13.5, marginBottom: 6 }}>Icon</legend>

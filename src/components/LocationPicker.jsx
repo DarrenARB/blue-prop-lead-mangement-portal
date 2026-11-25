@@ -5,7 +5,8 @@ import { SA_BOUNDS, TILE_ATTRIBUTION, TILE_URL, colorHex, markerHtml, reverseLoo
 
 // Address search (South Africa only) + a map where the pin can be dropped or dragged to the exact spot.
 // value: { address, lat, lng, suburb, city, province }
-export default function LocationPicker({ value, onChange, icon, color, radiusKm }) {
+// children render straight under the street address (town and province), above the map.
+export default function LocationPicker({ value, onChange, icon, color, radiusKm, children }) {
   const [query, setQuery] = useState(value.address ?? "");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -109,7 +110,7 @@ export default function LocationPicker({ value, onChange, icon, color, radiusKm 
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="field">
-        <label htmlFor="loc-q">Branch address</label>
+        <label htmlFor="loc-q">Street address</label>
         <div className="ac">
           <input
             id="loc-q" className="input" autoComplete="off" placeholder="Start typing the street address, e.g. 12 Jan Smuts Ave, Ferndale"
@@ -135,8 +136,9 @@ export default function LocationPicker({ value, onChange, icon, color, radiusKm 
           )}
         </div>
         {err ? <p className="hint" style={{ color: "var(--bad)" }}>{err}</p>
-          : <p className="hint">Pick a suggestion, then drag the pin to the exact spot. You can also click anywhere on the map to drop it.</p>}
+          : <p className="hint">Pick a suggestion and the town and province fill in for you. Drag the pin on the map to the exact spot.</p>}
       </div>
+      {children}
       <div ref={box} className="branch-map picker-map" role="application" aria-label="Choose the branch location on the map" />
       <p className="small muted">
         {value.lat != null
