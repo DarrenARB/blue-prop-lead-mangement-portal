@@ -339,7 +339,7 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 /* phones: one compact row of Next step buttons and a shorter score card, so the chat gets the room */
 @media (max-width: 600px) {
   .thread { gap: 10px; }
-  .thread-actions .act-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .thread-actions .act-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .thread-actions .act { flex-direction: column; justify-content: center; gap: 3px; min-height: 54px; padding: 4px 2px; font-size: 11px; line-height: 1.15; text-align: center; }
   .act-long { display: none; }
   .act-short { display: inline; }

@@ -4,7 +4,7 @@ import { must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { fmtDateTime, fmtPhone } from "../lib/format";
 import { Badge, Empty, ErrorNote, Spinner, useToast } from "../components/ui";
-import { notReady, personName, scoreTone } from "./Inbox";
+import { personName, scoreTone } from "./Inbox";
 import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
 
 export default function HotLeads() {
@@ -77,7 +77,6 @@ export default function HotLeads() {
           <p className="muted">Replies the AI scored {threshold} or higher, plus any you moved in yourself. Export them to Excel to load into the CRM.</p>
         </div>
         <div className="row">
-          <button className="btn" onClick={() => notReady(toast, "Sending straight to the CRM")}>Send to CRM</button>
           <button className="btn btn-primary" disabled={busy || !shown.length} onClick={exportXlsx}>{busy ? "Exporting…" : selected.size ? `Export ${selected.size} to Excel` : `Export ${shown.length} to Excel`}</button>
         </div>
       </div>

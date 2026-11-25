@@ -240,7 +240,6 @@ function Thread({ conv, threshold, onBack, onChanged }) {
               : <button className="act act-hot" onClick={() => setModal({ hot: true })}><Icon d={ICONS.flame} /><span className="act-long">Move to Hot Leads</span><span className="act-short">Hot lead</span></button>}
             <button className="act act-date" onClick={() => setModal("date")}><Icon d={ICONS.calendar} /><span className="act-long">Set follow-up</span><span className="act-short">Follow-up</span></button>
             <button className="act act-dnc" onClick={() => setModal("dnc")}><Icon d={ICONS.block} /><span className="act-long">Do Not Contact</span><span className="act-short">Don’t contact</span></button>
-            <button className="act act-crm" onClick={() => notReady(toast, "Sending to the CRM")}><Icon d={ICONS.send} /><span className="act-long">Send to CRM</span><span className="act-short">To CRM</span></button>
             <button className="act act-archive" onClick={archive}><Icon d={ICONS.archive} /><span className="act-long">Archive</span><span className="act-short">Archive</span></button>
           </div>
         </div>

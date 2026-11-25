@@ -9,7 +9,7 @@ export default function AuthShell({ children }) {
         </div>
         <div style={{ position: "relative", zIndex: 1 }}>
           <h1>WhatsApp campaigns agents can launch in <span className="hl">minutes</span>.</h1>
-          <p>Each agent sends from their own number. Replies land in one inbox, and the best leads go straight to the CRM.</p>
+          <p>Each agent sends from their own number. Replies land in one inbox, and the best leads are exported to Excel for the CRM.</p>
         </div>
         <p className="small" style={{ color: "#7F8BA6", position: "relative", zIndex: 1 }}>Built by Fin-Link</p>
         <svg className="auth-art" viewBox="0 0 380 380" aria-hidden="true">
