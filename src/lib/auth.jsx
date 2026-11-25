@@ -35,10 +35,11 @@ export function AuthProvider({ children }) {
     loading: session === undefined || (session && !profile && !profileError),
     refreshProfile: () => loadProfile(session),
     signOut: () => supabase.auth.signOut(),
-    isAdmin: !!profile && (profile.role === "admin" || profile.is_fin_link),
+    isAdmin: !!profile && (profile.role === "admin" || profile.role === "superadmin" || profile.is_fin_link),
+    isSuperAdmin: !!profile && (profile.role === "superadmin" || profile.is_fin_link),
     isFinLink: !!profile?.is_fin_link,
-    canSeeNumbers: !!profile && (profile.role === "admin" || profile.role === "support" || profile.role === "owner" || profile.is_fin_link),
-    canManageNumbers: !!profile && (profile.role === "admin" || profile.role === "support" || profile.is_fin_link),
+    canSeeNumbers: !!profile && (["admin", "superadmin", "owner"].includes(profile.role) || profile.is_fin_link),
+    canManageNumbers: !!profile && (["admin", "superadmin"].includes(profile.role) || profile.is_fin_link),
   };
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

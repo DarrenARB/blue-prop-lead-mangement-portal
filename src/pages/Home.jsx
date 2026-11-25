@@ -9,7 +9,7 @@ const COMING = {
   agent: ["Start a campaign from a 5-step wizard", "Your WhatsApp inbox, with every reply scored by AI", "Hot leads you can export to Excel for the CRM", "Follow-ups and key dates"],
   owner: ["Dashboard for your branches", "Each agent’s numbers side by side", "Your branches’ campaigns, hot leads and follow-ups"],
   admin: ["Company-wide dashboard", "Every campaign across all branches", "Do Not Contact list, Shotgun list and rules"],
-  support: ["Email and WhatsApp alerts when a number disconnects"],
+  superadmin: ["Email and WhatsApp alerts when a number disconnects", "Everything a Main Admin sees, plus finances"],
 };
 
 export default function Home() {

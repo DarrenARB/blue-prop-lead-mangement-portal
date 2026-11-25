@@ -218,61 +218,80 @@ const ALERT_KIND = {
   issue: ["Needs attention", "warn"], removed: ["Removed", "muted"], recovered: ["Back to normal", "ok"],
 };
 
-// Fin-Link only: who is told about number problems, and the alerts raised so far.
+// Super Admin only: who supports the portal (in priority order), who gets alerts, and the alerts raised so far.
 function SupportAlerts() {
   const toast = useToast();
-  const [recips, setRecips] = useState(null);
+  const [contacts, setContacts] = useState(null);
   const [alerts, setAlerts] = useState([]);
-  const [add, setAdd] = useState({ channel: "email", value: "", label: "" });
+  const [showToUsers, setShowToUsers] = useState(false);
+  const [edit, setEdit] = useState(null); // contact or {} for new
   const load = useCallback(async () => {
     try {
-      setRecips(await supabase.from("alert_recipients").select("*").order("created_at").then(must));
+      setContacts(await supabase.from("support_contacts").select("*").order("priority").order("created_at").then(must));
       setAlerts(await supabase.from("alerts").select("*").order("created_at", { ascending: false }).limit(10).then(must));
+      const s = await supabase.from("settings").select("show_support_contact").eq("id", 1).single().then(must);
+      setShowToUsers(!!s?.show_support_contact);
     } catch (e) { toast(e.message, "bad"); }
   }, [toast]);
   useEffect(() => { load(); }, [load]);
 
-  async function addRecipient(e) {
-    e.preventDefault();
-    const value = add.value.trim();
-    if (!value) return;
-    const { error } = await supabase.from("alert_recipients").insert({ channel: add.channel, value, label: add.label.trim() || null });
-    if (error) return toast(error.code === "23505" ? "That recipient is already on the list." : error.message, "bad");
-    setAdd({ channel: "email", value: "", label: "" }); load();
-  }
-  async function toggle(r) {
-    const { error } = await supabase.from("alert_recipients").update({ active: !r.active }).eq("id", r.id);
+  async function patch(c, fields) {
+    const { error } = await supabase.from("support_contacts").update(fields).eq("id", c.id);
     if (error) return toast(error.message, "bad");
     load();
   }
-  async function remove(r) {
-    const { error } = await supabase.from("alert_recipients").delete().eq("id", r.id);
+  async function remove(c) {
+    const { error } = await supabase.from("support_contacts").delete().eq("id", c.id);
     if (error) return toast(error.message, "bad");
+    toast(`${c.name} removed`); load();
+  }
+  async function move(c, dir) {
+    const list = contacts.filter((x) => x.active);
+    const i = list.findIndex((x) => x.id === c.id);
+    const other = list[i + dir];
+    if (!other) return;
+    await supabase.from("support_contacts").update({ priority: other.priority }).eq("id", c.id);
+    await supabase.from("support_contacts").update({ priority: c.priority === other.priority ? c.priority + dir : c.priority }).eq("id", other.id);
     load();
   }
+  async function toggleShow() {
+    const { error } = await supabase.from("settings").update({ show_support_contact: !showToUsers }).eq("id", 1);
+    if (error) return toast(error.message, "bad");
+    toast(!showToUsers ? "First-line contact now shown to everyone" : "First-line contact hidden from users");
+    load();
+  }
+  const rank = (i) => (i === 0 ? "Primary" : i === 1 ? "Secondary" : `Backup ${i - 1}`);
+  const active = (contacts ?? []).filter((c) => c.active);
+  const paused = (contacts ?? []).filter((c) => !c.active);
 
   return (
     <section className="card">
       <div className="card-head">
         <div>
-          <h2>Support alerts</h2>
-          <p className="muted small">When a number disconnects, is linked elsewhere, loses its licence or is removed, an alert is raised for these people. Fin-Link only; the client doesn’t see this. Sending by email and WhatsApp is switched on in a later stage, so for now alerts are listed here.</p>
+          <h2>Support contacts &amp; alerts</h2>
+          <p className="muted small">Super Admins only; the client doesn’t see this. Everyone below with alerts on is told when a number disconnects, is linked elsewhere, loses its licence or is removed. Sending by email and WhatsApp is switched on in a later stage, so for now alerts are listed here.</p>
         </div>
+        <button className="btn" onClick={() => setEdit({})}>Add contact</button>
       </div>
       <div className="grid g2">
         <div className="stack">
-          <h3>Who gets alerted</h3>
-          {!recips ? <Spinner /> : recips.length === 0 ? <p className="muted small">Nobody yet.</p> : (
+          <h3>Who supports the portal</h3>
+          {!contacts ? <Spinner /> : active.length === 0 ? <p className="muted small">Nobody yet. Add a contact so alerts reach someone.</p> : (
             <div className="table-wrap">
               <table>
                 <tbody>
-                  {recips.map((r) => (
-                    <tr key={r.id} className={r.active ? "" : "dim"}>
-                      <td><div className="cell-title">{r.label || r.value}</div><div className="cell-sub">{r.channel === "email" ? "Email" : "WhatsApp"} · {r.value}</div></td>
+                  {active.map((c, i) => (
+                    <tr key={c.id}>
+                      <td>
+                        <div className="cell-title">{c.name} <Badge tone={i === 0 ? "brand" : "muted"}>{rank(i)}</Badge></div>
+                        <div className="cell-sub">{[c.email, c.whatsapp && fmtPhone(c.whatsapp)].filter(Boolean).join(" · ") || "No email or WhatsApp yet"}</div>
+                        <div className="cell-sub">{c.receives_alerts ? "Gets alerts" : "Alerts off"}</div>
+                      </td>
                       <td className="num">
                         <div className="row" style={{ justifyContent: "flex-end" }}>
-                          <button className="btn btn-sm" onClick={() => toggle(r)}>{r.active ? "Pause" : "Resume"}</button>
-                          <button className="btn btn-sm btn-danger" onClick={() => remove(r)}>Remove</button>
+                          <button className="btn btn-sm" disabled={i === 0} onClick={() => move(c, -1)} aria-label={`Move ${c.name} up`}>↑</button>
+                          <button className="btn btn-sm" disabled={i === active.length - 1} onClick={() => move(c, 1)} aria-label={`Move ${c.name} down`}>↓</button>
+                          <button className="btn btn-sm" onClick={() => setEdit(c)}>Edit</button>
                         </div>
                       </td>
                     </tr>
@@ -281,25 +300,79 @@ function SupportAlerts() {
               </table>
             </div>
           )}
-          <form className="row" onSubmit={addRecipient} aria-label="Add alert recipient">
-            <select className="select" style={{ width: "auto" }} value={add.channel} onChange={(e) => setAdd({ ...add, channel: e.target.value })} aria-label="Channel">
-              <option value="email">Email</option><option value="whatsapp">WhatsApp</option>
-            </select>
-            <input className="input" style={{ flex: "1 1 180px" }} placeholder={add.channel === "email" ? "name@company.com" : "+27 82 555 0141"} value={add.value} onChange={(e) => setAdd({ ...add, value: e.target.value })} aria-label="Email or number" />
-            <input className="input" style={{ flex: "1 1 140px" }} placeholder="Name (optional)" value={add.label} onChange={(e) => setAdd({ ...add, label: e.target.value })} aria-label="Name" />
-            <button className="btn">Add</button>
-          </form>
+          {paused.length > 0 && (
+            <p className="muted small">Paused: {paused.map((c, i) => <span key={c.id}>{i ? ", " : ""}{c.name} <button className="link-btn" onClick={() => patch(c, { active: true })}>resume</button></span>)}</p>
+          )}
+          <label className="row small" style={{ gap: 8, alignItems: "flex-start" }}>
+            <input type="checkbox" checked={showToUsers} onChange={toggleShow} style={{ marginTop: 3 }} />
+            <span><strong>Show the primary contact to all users</strong><br /><span className="muted">When on, everyone in the portal sees {active[0]?.name ?? "the primary contact"} as their first line of support. Off for now: Blue PROP contacts Fin-Link through Darren.</span></span>
+          </label>
         </div>
         <div className="stack">
           <h3>Recent alerts</h3>
           {alerts.length === 0 ? <p className="muted small">No alerts yet. Every number has been healthy since alerts were switched on.</p> : alerts.map((a) => (
             <div key={a.id} className="money-row small">
-              <span><Badge tone={ALERT_KIND[a.kind]?.[1] ?? "muted"}>{ALERT_KIND[a.kind]?.[0] ?? a.kind}</Badge> {a.summary}<div className="cell-sub">{fmtDateTime(a.created_at)} · {a.delivery === "queued" ? "Queued: sending switched on later" : a.delivery}</div></span>
+              <span><Badge tone={ALERT_KIND[a.kind]?.[1] ?? "muted"}>{ALERT_KIND[a.kind]?.[0] ?? a.kind}</Badge> {a.summary}<div className="cell-sub">{fmtDateTime(a.created_at)} · {a.delivery === "queued" ? `Queued for ${(a.recipients ?? []).map((r) => r.label).filter((v, i, x) => v && x.indexOf(v) === i).join(" and ") || "support"}: sending switched on later` : a.delivery}</div></span>
             </div>
           ))}
         </div>
       </div>
+      {edit && <ContactModal contact={edit} nextPriority={(contacts ?? []).reduce((m, c) => Math.max(m, c.priority), 0) + 1}
+        onClose={() => setEdit(null)} onRemove={async (c) => { setEdit(null); await remove(c); }}
+        onSaved={() => { setEdit(null); load(); toast("Contact saved"); }} />}
     </section>
+  );
+}
+
+function ContactModal({ contact, nextPriority, onClose, onSaved, onRemove }) {
+  const isEdit = !!contact.id;
+  const [f, setF] = useState({
+    name: contact.name ?? "", email: contact.email ?? "", whatsapp: contact.whatsapp ? fmtPhone(contact.whatsapp) : "",
+    receives_alerts: contact.receives_alerts ?? true, active: contact.active ?? true,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+
+  function normalise(raw) {
+    let d = raw.trim().replace(/[\s\-()]/g, "");
+    if (!d) return null;
+    if (d.startsWith("00")) d = "+" + d.slice(2);
+    if (/^0\d{9}$/.test(d)) d = "+27" + d.slice(1);
+    else if (/^27\d{9}$/.test(d)) d = "+" + d;
+    if (!/^\+\d{8,15}$/.test(d)) throw new Error(`“${raw}” isn’t a valid mobile number. Use a format like 082 555 0141 or +27 82 555 0141.`);
+    return d;
+  }
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      if (!f.name.trim()) throw new Error("Enter a name.");
+      const email = f.email.trim() || null;
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That email address doesn’t look right.");
+      const row = { name: f.name.trim(), email, whatsapp: normalise(f.whatsapp), receives_alerts: f.receives_alerts, active: f.active };
+      const q = isEdit ? supabase.from("support_contacts").update(row).eq("id", contact.id) : supabase.from("support_contacts").insert({ ...row, priority: nextPriority });
+      const { error } = await q;
+      if (error) throw error;
+      onSaved();
+    } catch (err) { setError(err); setBusy(false); }
+  }
+  return (
+    <Modal title={isEdit ? `Edit ${contact.name}` : "Add support contact"} sub="New contacts go to the bottom of the list; use the arrows to change who is primary." onClose={onClose}
+      footer={<>
+        {isEdit && <button type="button" className="btn btn-danger" style={{ marginRight: "auto" }} onClick={() => onRemove(contact)}>Remove</button>}
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" form="contact-form" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+      </>}>
+      <form id="contact-form" className="stack" onSubmit={submit}>
+        <ErrorNote error={error} />
+        <Field label="Name" id="sc-name"><input id="sc-name" className="input" value={f.name} onChange={set("name")} required /></Field>
+        <Field label="Email" id="sc-email"><input id="sc-email" className="input" type="email" value={f.email} onChange={set("email")} placeholder="name@company.com" /></Field>
+        <Field label="WhatsApp" id="sc-whatsapp"><input id="sc-whatsapp" className="input" value={f.whatsapp} onChange={set("whatsapp")} placeholder="+27 82 555 0141" /></Field>
+        <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={f.receives_alerts} onChange={set("receives_alerts")} /> Gets number alerts</label>
+        {isEdit && <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={f.active} onChange={set("active")} /> Active (untick to pause without removing)</label>}
+      </form>
+    </Modal>
   );
 }
 

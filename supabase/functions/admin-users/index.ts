@@ -15,9 +15,9 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 class HttpError extends Error { constructor(public status: number, msg: string) { super(msg); } }
 
-const ROLES = ["admin", "owner", "agent", "support"] as const;
+const ROLES = ["admin", "owner", "agent", "superadmin"] as const;
 type Role = typeof ROLES[number];
-const ROLE_LABEL: Record<Role, string> = { admin: "Main Admin", owner: "Branch Owner", agent: "Agent", support: "Support" };
+const ROLE_LABEL: Record<Role, string> = { admin: "Main Admin", owner: "Branch Owner", agent: "Agent", superadmin: "Super Admin" };
 
 function tempPassword() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -37,10 +37,16 @@ export function normalisePhone(raw: string | null | undefined): string | null {
 }
 
 async function audit(actor: { id: string; full_name: string } | null, type: string, summary: string, data?: unknown) {
-  await db.from("audit_log").insert({ actor_id: actor?.id ?? null, actor_name: actor?.full_name ?? "System", type, summary, data: data ?? null });
+  await db.from("audit_log").insert({ actor_id: actor?.id || null, actor_name: actor?.full_name ?? "System", type, summary, data: data ?? null });
 }
 
 async function caller(req: Request) {
+  const internal = req.headers.get("x-internal-key");
+  if (internal) {
+    const { data } = await db.rpc("check_internal_key", { k: internal });
+    if (data === true) return { id: null as unknown as string, full_name: "Fin-Link setup", role: "superadmin" as Role, is_fin_link: true, email: "" };
+    throw new HttpError(401, "Bad internal key.");
+  }
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!token) throw new HttpError(401, "Please sign in again.");
   const { data, error } = await db.auth.getUser(token);
@@ -103,7 +109,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = body.action as string;
 
-    // ---------- First-run setup: creates the first Fin-Link admin. Only works while no one exists. ----------
+    // ---------- First-run setup: creates the first Super Admin (Fin-Link). Only works while no one exists. ----------
     if (action === "bootstrap") {
       const { count } = await db.from("profiles").select("id", { count: "exact", head: true });
       if ((count ?? 0) > 0) throw new HttpError(409, "The portal is already set up. Please sign in.");
@@ -117,9 +123,9 @@ Deno.serve(async (req) => {
         app_metadata: { portal: "true" }, user_metadata: { full_name },
       });
       if (error || !data.user) throw new HttpError(400, error?.message ?? "Could not create the account.");
-      const { error: pe } = await db.from("profiles").insert({ id: data.user.id, email, full_name, role: "admin", is_fin_link: true });
+      const { error: pe } = await db.from("profiles").insert({ id: data.user.id, email, full_name, role: "superadmin" });
       if (pe) { await db.auth.admin.deleteUser(data.user.id); throw new HttpError(400, pe.message); }
-      await audit({ id: data.user.id, full_name }, "people", `${full_name} set up the portal as Main Admin (Fin-Link)`);
+      await audit({ id: data.user.id, full_name }, "people", `${full_name} set up the portal as Super Admin (Fin-Link)`);
       return json({ ok: true });
     }
 
@@ -132,6 +138,7 @@ Deno.serve(async (req) => {
       const email = cleanEmail(body.email);
       const role = body.role as Role;
       if (!ROLES.includes(role)) throw new HttpError(400, "Pick a role.");
+      if (role === "superadmin" && !me.is_fin_link) throw new HttpError(403, "Only a Super Admin can add another Super Admin.");
       const branch_id = role === "agent" ? (body.branch_id || null) : null;
       if (role === "agent" && !branch_id) throw new HttpError(400, "Agents must belong to a branch.");
       const ownerBranches: string[] = role === "owner" ? (body.owner_branch_ids ?? []) : [];
@@ -173,6 +180,7 @@ Deno.serve(async (req) => {
       const role = (body.role ?? target.role) as Role;
       if (!ROLES.includes(role)) throw new HttpError(400, "Pick a role.");
       if (target.id === me.id && role !== target.role) throw new HttpError(400, "You can’t change your own role.");
+      if ((role === "superadmin" || target.role === "superadmin") && role !== target.role && !me.is_fin_link) throw new HttpError(403, "Only a Super Admin can give or remove the Super Admin role.");
       const branch_id = role === "agent" ? (body.branch_id ?? target.branch_id) : null;
       if (role === "agent" && !branch_id) throw new HttpError(400, "Agents must belong to a branch.");
       const ownerBranches: string[] = role === "owner" ? (body.owner_branch_ids ?? []) : [];

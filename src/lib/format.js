@@ -1,4 +1,4 @@
-export const ROLE_LABEL = { admin: "Main Admin", owner: "Branch Owner", agent: "Agent", support: "Support" };
+export const ROLE_LABEL = { admin: "Main Admin", owner: "Branch Owner", agent: "Agent", superadmin: "Super Admin" };
 
 export const NUMBER_STATUS = {
   ok: ["Sending normally", "ok"],

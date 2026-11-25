@@ -89,7 +89,7 @@ async function whoIsCalling(req: Request): Promise<Actor> {
 }
 const label = (last4: string | null | undefined, id: string) => (last4 ? `number ending ${last4}` : id);
 const isAdmin = (a: Actor) => a.role === "admin" || a.is_fin_link || a.role === "system";
-const canSeeNumbers = (a: Actor) => isAdmin(a) || a.role === "support";
+const canSeeNumbers = (a: Actor) => isAdmin(a) || a.role === "superadmin";
 
 const STATUS_TEXT: Record<string, string> = {
   ok: "is sending normally again", disconnected: "has disconnected", linked_elsewhere: "is linked on another device or account",
@@ -101,7 +101,11 @@ const STATUS_TEXT: Record<string, string> = {
 async function raiseAlert(numberId: string, last4: string | null | undefined, profile: string | null | undefined, from: string | null, to: string) {
   if (from === to) return;
   if (to === "ok" && (!from || from === "unknown")) return; // a healthy new number isn't news
-  const { data: recips } = await db.from("alert_recipients").select("channel, value, label").eq("active", true);
+  const { data: contacts } = await db.from("support_contacts").select("name, email, whatsapp, priority").eq("active", true).eq("receives_alerts", true).order("priority");
+  const recips = (contacts ?? []).flatMap((c) => [
+    ...(c.email ? [{ channel: "email", value: c.email, label: c.name, priority: c.priority }] : []),
+    ...(c.whatsapp ? [{ channel: "whatsapp", value: c.whatsapp, label: c.name, priority: c.priority }] : []),
+  ]);
   const who = last4 ? `WhatsApp number ending ${last4}` : `WhatsApp account “${profile ?? numberId}”`;
   await db.from("alerts").insert({
     number_id: numberId,

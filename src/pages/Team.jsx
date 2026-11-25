@@ -8,7 +8,7 @@ const ROLE_HELP = {
   agent: "Runs campaigns from their own number",
   owner: "Oversees one or more branches",
   admin: "Manages people, rules and everything",
-  support: "Fin-Link: keeps numbers connected",
+  superadmin: "Fin-Link: sees and manages everything, receives support alerts",
 };
 
 export default function Team() {
@@ -167,7 +167,7 @@ function PersonModal({ mode, person, data, me, onClose, onSaved }) {
   const branches = data.branches.filter((b) => !b.archived_at);
   const freeNumbers = data.numbers.filter((n) => (!n.agent_id || n.agent_id === person?.id) && n.status !== "removed");
   const chosen = data.numbers.find((n) => n.id === f.number_id);
-  const roles = me.is_fin_link ? ["agent", "owner", "admin", "support"] : ["agent", "owner", "admin"];
+  const roles = me.is_fin_link ? ["agent", "owner", "admin", "superadmin"] : ["agent", "owner", "admin"];
   const selfEdit = isEdit && person.id === me.id;
 
   async function submit(e) {

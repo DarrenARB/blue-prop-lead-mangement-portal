@@ -258,3 +258,5 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .tab.on { color: var(--brand); border-bottom-color: var(--brand); }
 .tab-n { font-size: 12px; background: var(--soft); color: var(--muted); border-radius: 999px; padding: 1px 8px; }
 .tab.on .tab-n { background: var(--brand); color: #fff; }
+
+.link-btn { background: none; border: 0; padding: 0; color: var(--brand, #1B489B); font: inherit; text-decoration: underline; cursor: pointer; }
