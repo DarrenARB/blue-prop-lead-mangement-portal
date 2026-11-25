@@ -25,9 +25,12 @@ Multi-user portal in front of lemlist so Blue PROP (Blue Property Group, South A
 - Emails (invites, password resets, reminders) are deferred to a later stage; for now admins share temporary passwords.
 - Never put service-role, lemlist or Anthropic keys in front-end code or the repo. `.env` holds only the public URL and publishable key.
 
+## Hosting
+Hostinger static hosting (upload `dist/` contents to `public_html`). HashRouter, so no rewrites needed.
+
 ## Commands
 ```bash
 npm install
 npm run dev     # local
-npm run build   # dist/ for static hosting (Netlify Drop, Vercel, Cloudflare Pages)
+npm run build   # dist/ → upload its contents to the site's public_html on Hostinger
 ```

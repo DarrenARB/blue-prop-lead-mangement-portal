@@ -14,13 +14,16 @@ React + Vite front end on top of the Supabase project **Blue Prop Lead Communica
 
 The portal only **reads** from lemlist at this stage (`GET /team`, `GET /senders`).
 
-## Host it (no build needed)
+## Host it on Hostinger
 
-Build it first (`npm run build`), or use the prebuilt site zip from the chat; either way, `dist/` has the project URL and publishable key baked in.
+The portal is a static site, so Hostinger's standard web hosting is enough. It needs no Node server and no rewrite rules, because the app uses `#/` routes.
 
-**Netlify Drop (fastest):** go to https://app.netlify.com/drop and drag the `dist` folder onto the page. You get a live URL straight away. Sign in to Netlify to keep the site and add a custom domain such as `portal.blueprop.com`.
+1. Build it: `cp .env.example .env && npm install && npm run build`. Or use the prebuilt site zip from the chat.
+2. In hPanel, create the site or subdomain, for example `portal.blueprop.com`. Point DNS at Hostinger if the domain lives elsewhere.
+3. Open hPanel → **File Manager**, go into that site's `public_html` folder, upload the **contents** of `dist/` (`index.html` and `assets/`), and extract them if you uploaded a zip.
+4. Turn on the free SSL certificate in hPanel → Security → SSL.
 
-Any static host works (Vercel, Cloudflare Pages, cPanel). The app uses `#/` routes, so it needs no rewrite rules.
+To update the site, rebuild and replace the files in `public_html`.
 
 ## Run or rebuild locally
 
@@ -31,9 +34,9 @@ npm run dev      # http://localhost:5173
 npm run build    # outputs dist/
 ```
 
-`.env` holds only public values (Supabase URL and publishable key). **Never** put the service-role, lemlist or Anthropic keys in the front end. When building on a host (Netlify, Vercel), set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in its environment settings.
+`.env` holds only public values (Supabase URL and publishable key). **Never** put the service-role, lemlist or Anthropic keys in the front end. If you build on a CI service, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in its environment settings.
 
-**Netlify from this repo:** New site → Import from GitHub → build command `npm run build`, publish directory `dist`, add the two env vars above.
+
 
 ## Backend (already deployed in Supabase)
 
