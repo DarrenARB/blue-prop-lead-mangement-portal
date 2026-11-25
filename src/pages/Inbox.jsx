@@ -1,0 +1,300 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { callFn, must, supabase } from "../lib/supabase";
+import { useAuth } from "../lib/auth";
+import { ago, fmtDateTime, fmtPhone } from "../lib/format";
+import { Badge, CopyButton, Empty, ErrorNote, Field, Modal, Spinner, useToast } from "../components/ui";
+import { DATE_TYPES } from "./Dates";
+
+export const notReady = (toast, what) => toast(`${what} isn’t working yet. It’s switched on in a later stage.`, "warn");
+export const scoreTone = (s, t = 70) => (s == null ? "muted" : s >= t ? "ok" : s >= 40 ? "warn" : "muted");
+export const personName = (c) => [c?.first_name, c?.last_name].filter(Boolean).join(" ") || (c?.phone_e164 ? `Number ending ${c.phone_e164.slice(-4)}` : "Unknown contact");
+
+export default function Inbox() {
+  const { profile, isAdmin, isFinLink } = useAuth();
+  const toast = useToast();
+  const [convs, setConvs] = useState(null);
+  const [threshold, setThreshold] = useState(70);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
+  const [openId, setOpenId] = useState(null);
+  const [busy, setBusy] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const [c, hot, people, settings] = await Promise.all([
+        supabase.from("conversations").select("*, contact:contacts(first_name, last_name, phone_e164, suburb), campaign:campaigns(name)").eq("archived", false).order("last_message_at", { ascending: false, nullsFirst: false }).limit(500).then(must),
+        supabase.from("hot_leads").select("conversation_id, active, source").then(must),
+        supabase.from("profiles").select("id, full_name").then(must),
+        supabase.from("settings").select("hot_threshold").eq("id", 1).single().then(must),
+      ]);
+      const hotBy = Object.fromEntries((hot ?? []).map((h) => [h.conversation_id, h]));
+      const names = Object.fromEntries((people ?? []).map((p) => [p.id, p.full_name]));
+      setConvs((c ?? []).map((x) => ({ ...x, hot: hotBy[x.id] ?? null, agent: names[x.agent_id] ?? "—" })));
+      setThreshold(settings?.hot_threshold ?? 70);
+    } catch (e) { setError(e); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return (convs ?? []).filter((c) => {
+      if (filter === "unread" && !c.unread) return false;
+      if (filter === "hot" && !c.hot?.active) return false;
+      if (filter === "unscored" && c.score != null) return false;
+      if (!t) return true;
+      return personName(c.contact).toLowerCase().includes(t) || (c.last_preview ?? "").toLowerCase().includes(t) || (c.contact?.suburb ?? "").toLowerCase().includes(t);
+    });
+  }, [convs, filter, q]);
+  const open = convs?.find((c) => c.id === openId) ?? null;
+  const count = (f) => (convs ?? []).filter((c) => (f === "unread" ? c.unread : f === "hot" ? c.hot?.active : c.score == null)).length;
+  const hasSamples = (convs ?? []).some((c) => c.is_sample);
+
+  async function samples(load_) {
+    setBusy("samples");
+    const { error } = await supabase.rpc(load_ ? "load_inbox_samples" : "clear_inbox_samples");
+    setBusy("");
+    if (error) {
+      if (/could not find the function|does not exist/i.test(error.message)) return notReady(toast, "Sample data");
+      return toast(error.message, "bad");
+    }
+    toast(load_ ? "Sample conversations loaded" : "Sample conversations cleared");
+    setOpenId(null); load();
+  }
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">{isAdmin ? "All agents" : profile.role === "owner" ? "Your branches" : "Your WhatsApp"}</p>
+          <h1>Inbox</h1>
+          <p className="muted">Every reply to a portal campaign, scored by AI. This is read-only: reply from WhatsApp on your phone.</p>
+        </div>
+        <div className="row">
+          {isFinLink && (hasSamples
+            ? <button className="btn" disabled={busy === "samples"} onClick={() => samples(false)}>Clear sample conversations</button>
+            : <button className="btn" disabled={busy === "samples"} onClick={() => samples(true)}>Load sample conversations</button>)}
+          <button className="btn" onClick={() => notReady(toast, "Syncing replies from lemlist")}>Check for new replies</button>
+        </div>
+      </div>
+
+      {hasSamples && <div className="note note-info">Showing <strong>sample conversations</strong> (fake numbers, nothing was sent). Clear them before going live.</div>}
+
+      <div className="tabs" role="tablist" aria-label="Filter conversations">
+        {[["all", "All", convs?.length ?? 0], ["unread", "Unread", count("unread")], ["hot", "Hot", count("hot")], ["unscored", "Not scored", count("unscored")]].map(([k, l, n]) => (
+          <button key={k} role="tab" aria-selected={filter === k} className={`tab ${filter === k ? "active" : ""}`} onClick={() => setFilter(k)}>{l} <span className="tab-n">{n}</span></button>
+        ))}
+      </div>
+      <ErrorNote error={error} />
+
+      {!convs && !error ? <Spinner /> : convs && convs.length === 0 ? (
+        <div className="card"><Empty title="No replies yet">Replies to your campaigns appear here within a minute of arriving, each with an AI score. Campaigns can’t launch yet, so this stays empty for now.{isFinLink ? " Load the sample conversations to preview it." : ""}</Empty></div>
+      ) : convs && (
+        <div className={`inbox ${open ? "has-open" : ""}`}>
+          <div className="inbox-list card">
+            <input className="input" type="search" placeholder="Search name, suburb or message" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search conversations" />
+            {shown.length === 0 ? <p className="muted small" style={{ padding: 12 }}>No conversations match.</p> : (
+              <ul className="conv-list">
+                {shown.map((c) => (
+                  <li key={c.id}>
+                    <button className={`conv ${openId === c.id ? "active" : ""} ${c.unread ? "unread" : ""}`} onClick={() => setOpenId(c.id)}>
+                      <span className="conv-top">
+                        <span className="conv-name">{personName(c.contact)}</span>
+                        <span className="conv-time">{ago(c.last_message_at)}</span>
+                      </span>
+                      <span className="conv-preview">{c.last_direction === "out" ? "You: " : ""}{c.last_preview || "—"}</span>
+                      <span className="conv-tags">
+                        {c.score != null ? <Badge tone={scoreTone(c.score, threshold)}>{c.score}</Badge> : <Badge>Not scored</Badge>}
+                        {c.hot?.active && <Badge tone="hot">Hot</Badge>}
+                        {c.opt_out && <Badge tone="bad">Opt-out</Badge>}
+                        {profile.role !== "agent" && <span className="cell-sub">{c.agent}</span>}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {open ? <Thread key={open.id} conv={open} threshold={threshold} onBack={() => setOpenId(null)} onChanged={load} />
+            : <div className="card inbox-empty"><p className="muted">Pick a conversation to read it.</p></div>}
+        </div>
+      )}
+    </>
+  );
+}
+
+function Thread({ conv, threshold, onBack, onChanged }) {
+  const { profile, isAdmin } = useAuth();
+  const toast = useToast();
+  const [msgs, setMsgs] = useState(null);
+  const [scores, setScores] = useState([]);
+  const [busy, setBusy] = useState("");
+  const [modal, setModal] = useState(null); // 'dnc' | 'date' | 'hot'
+  const canAct = isAdmin || conv.agent_id === profile.id;
+
+  useEffect(() => {
+    supabase.from("messages").select("*").eq("conversation_id", conv.id).order("sent_at").then(must).then(setMsgs).catch((e) => toast(e.message, "bad"));
+    supabase.from("ai_scores").select("score, reason, scored_at, model").eq("conversation_id", conv.id).order("scored_at", { ascending: false }).limit(5).then(must).then(setScores).catch(() => {});
+    if (conv.unread && canAct) supabase.from("conversations").update({ unread: false }).eq("id", conv.id).then(() => onChanged());
+  }, [conv.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function rescore() {
+    setBusy("score");
+    try {
+      const o = await callFn("campaigns", { action: "score_conversation", conversation_id: conv.id });
+      toast(`Scored ${o.score}${o.hot ? " · now a Hot Lead" : ""}${o.opt_out ? " · opt-out spotted, sent to Do Not Contact for review" : ""}`);
+      onChanged();
+    } catch (e) { toast(e.message, "bad"); }
+    finally { setBusy(""); }
+  }
+  async function archive() {
+    const { error } = await supabase.from("conversations").update({ archived: true }).eq("id", conv.id);
+    if (error) return toast(error.message, "bad");
+    toast("Archived"); onBack(); onChanged();
+  }
+  const c = conv.contact;
+
+  return (
+    <div className="card thread">
+      <div className="thread-head">
+        <button className="btn btn-sm inbox-back" onClick={onBack}>← Back</button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ margin: 0 }}>{personName(c)} {conv.is_sample && <Badge>Sample</Badge>}</h2>
+          <div className="cell-sub">{c?.phone_e164 ? fmtPhone(c.phone_e164) : ""}{c?.suburb ? ` · ${c.suburb}` : ""}{conv.campaign?.name ? ` · ${conv.campaign.name}` : ""}</div>
+        </div>
+        {c?.phone_e164 && <CopyButton text={c.phone_e164} label="Copy number" />}
+      </div>
+
+      <div className={`score-card tone-${scoreTone(conv.score, threshold)}`}>
+        <div className="score-num" aria-label={conv.score != null ? `AI score ${conv.score} out of 100` : "Not scored yet"}>{conv.score ?? "–"}</div>
+        <div style={{ flex: 1 }}>
+          <strong>{conv.score == null ? "Not scored yet" : conv.score >= threshold ? "Hot lead" : conv.score >= 40 ? "Warm" : "Cold"}</strong>
+          <div className="small">{conv.score_reason ?? "The AI scores each reply from 0 to 100 with a one-line reason."}</div>
+          {conv.hot && <div className="cell-sub">{conv.hot.active ? "In Hot Leads" : "Kept out of Hot Leads"} · {conv.hot.source === "manual" ? "set by a person" : "set by AI"}</div>}
+        </div>
+        {canAct && <button className="btn btn-sm" disabled={busy === "score"} onClick={rescore}>{busy === "score" ? "Scoring…" : conv.score == null ? "Score now" : "Re-score"}</button>}
+      </div>
+      {conv.opt_out && <div className="note note-bad small">The AI thinks this person asked not to be contacted. Check Do Not Contact.</div>}
+
+      <div className="wa-thread" aria-label="Messages">
+        {!msgs ? <Spinner /> : msgs.length === 0 ? <p className="muted small">No messages stored yet.</p> : msgs.map((m) => (
+          <div key={m.id} className={`wa-msg ${m.direction}`}>
+            <div className="wa-bubble">{m.body}</div>
+            <div className="wa-meta">{m.direction === "out" ? `Message ${m.step ?? ""}`.trim() + (m.status ? ` · ${m.status}` : "") + " · " : ""}{fmtDateTime(m.sent_at)}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="thread-reply">
+        <input className="input" disabled placeholder="Reply from WhatsApp on your phone" aria-label="Replying isn’t available in the portal" />
+        <button className="btn" onClick={() => notReady(toast, "Replying from the portal")}>Send</button>
+      </div>
+
+      {canAct && (
+        <div className="row thread-actions">
+          {conv.hot?.active
+            ? <button className="btn btn-sm" onClick={() => setModal({ hot: false })}>Take out of Hot Leads</button>
+            : <button className="btn btn-sm btn-primary" onClick={() => setModal({ hot: true })}>Move to Hot Leads</button>}
+          <button className="btn btn-sm" onClick={() => setModal("date")}>Set follow-up</button>
+          <button className="btn btn-sm" onClick={() => setModal("dnc")}>Do Not Contact</button>
+          <button className="btn btn-sm" onClick={() => notReady(toast, "Sending to the CRM")}>Send to CRM</button>
+          <button className="btn btn-sm btn-link" onClick={archive}>Archive</button>
+        </div>
+      )}
+      {scores.length > 1 && (
+        <details className="small"><summary className="muted">Score history</summary>
+          <ul style={{ margin: "6px 0 0 18px" }}>{scores.map((s, i) => <li key={i}>{s.score} · {s.reason} <span className="muted">({fmtDateTime(s.scored_at)})</span></li>)}</ul>
+        </details>
+      )}
+
+      {modal?.hot !== undefined && <HotModal conv={conv} active={modal.hot} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); toast(modal.hot ? "Moved to Hot Leads" : "Taken out of Hot Leads"); }} />}
+      {modal === "dnc" && <DncFromConv conv={conv} onClose={() => setModal(null)} onDone={() => { setModal(null); toast("Added to Do Not Contact"); onChanged(); }} />}
+      {modal === "date" && <DateModal conv={conv} onClose={() => setModal(null)} onDone={() => { setModal(null); toast("Follow-up saved"); }} />}
+    </div>
+  );
+}
+
+function HotModal({ conv, active, onClose, onDone }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    const { error } = await supabase.rpc("set_hot_lead", { p_conversation: conv.id, p_active: active, p_note: note });
+    if (error) { setError(error); setBusy(false); } else onDone();
+  }
+  return (
+    <Modal title={active ? "Move to Hot Leads" : "Take out of Hot Leads"} sub="Your decision overrides the AI from now on, and it’s logged." onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" form="hot-f" disabled={busy}>{busy ? "Saving…" : "Confirm"}</button></>}>
+      <form id="hot-f" className="stack" onSubmit={submit}>
+        <ErrorNote error={error} />
+        <Field label="Why? (optional)" id="hot-note"><input id="hot-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={active ? "e.g. Called me directly, wants to list" : "e.g. Already working with another agent"} /></Field>
+      </form>
+    </Modal>
+  );
+}
+
+function DncFromConv({ conv, onClose, onDone }) {
+  const [reason, setReason] = useState(conv.opt_out ? "Asked not to be contacted (WhatsApp reply)" : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  async function submit(e) {
+    e.preventDefault();
+    if (conv.is_sample) { setError(new Error("This is a sample conversation, so it isn’t added to the real Do Not Contact list.")); return; }
+    setBusy(true);
+    const { error } = await supabase.from("dnc").insert({ phone_e164: conv.contact.phone_e164, name: personName(conv.contact), reason: reason.trim() || null, source: "inbox" });
+    if (error) { setError(error.code === "23505" ? new Error("They’re already on Do Not Contact.") : error); setBusy(false); } else onDone();
+  }
+  return (
+    <Modal title={`Add ${personName(conv.contact)} to Do Not Contact?`} sub="Nobody at Blue PROP will message them again through the portal. Stopping them in running lemlist campaigns is switched on with launching." onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-danger" form="dnc-c" disabled={busy}>{busy ? "Adding…" : "Add to Do Not Contact"}</button></>}>
+      <form id="dnc-c" className="stack" onSubmit={submit}>
+        <ErrorNote error={error} />
+        <Field label="Reason" id="dncc-reason"><input id="dncc-reason" className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+      </form>
+    </Modal>
+  );
+}
+
+export function DateModal({ conv, initial, onClose, onDone }) {
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const [f, setF] = useState({ type: initial?.type ?? "followup", due_on: initial?.due_on ?? tomorrow, note: initial?.note ?? "", title: initial?.title ?? "", yearly: initial?.yearly ?? false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      if (!conv && !initial?.contact_id && !f.title.trim()) throw new Error("Say who this is for.");
+      const row = { type: f.type, due_on: f.due_on, note: f.note.trim() || null, yearly: ["birthday", "anniversary"].includes(f.type) ? true : f.yearly, title: f.title.trim() || null };
+      const q = initial?.id
+        ? supabase.from("key_dates").update(row).eq("id", initial.id)
+        : supabase.from("key_dates").insert({ ...row, ...(conv ? { agent_id: conv.agent_id, contact_id: conv.contact_id, conversation_id: conv.id } : {}) });
+      const { error } = await q;
+      if (error) throw error;
+      onDone();
+    } catch (err) { setError(err); setBusy(false); }
+  }
+  return (
+    <Modal title={initial?.id ? "Edit date" : conv ? `Date for ${personName(conv.contact)}` : "Add a date"} onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" form="date-f" disabled={busy}>{busy ? "Saving…" : "Save"}</button></>}>
+      <form id="date-f" className="stack" onSubmit={submit}>
+        <ErrorNote error={error} />
+        {!conv && !initial?.contact_id && <Field label="Who is it for?" id="d-title"><input id="d-title" className="input" value={f.title} onChange={set("title")} placeholder="e.g. Sipho Ndlovu, 7 Oak Lane" /></Field>}
+        <Field label="Type" id="d-type">
+          <select id="d-type" className="select" value={f.type} onChange={set("type")}>
+            {Object.entries(DATE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Date" id="d-date"><input id="d-date" className="input" type="date" value={f.due_on} onChange={set("due_on")} required /></Field>
+        <Field label="Note" id="d-note"><input id="d-note" className="input" value={f.note} onChange={set("note")} placeholder="e.g. Call back about the Saturday valuation" /></Field>
+        {["birthday", "anniversary"].includes(f.type)
+          ? <p className="muted small">Repeats every year.</p>
+          : <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={f.yearly} onChange={set("yearly")} /> Repeat every year</label>}
+        <p className="muted small">It shows on Dates and Home when it’s due. Email reminders are switched on in a later stage.</p>
+      </form>
+    </Modal>
+  );
+}

@@ -163,7 +163,11 @@ async function processUpload(me: Me, body: any) {
     if (error) throw new HttpError(500, error.message);
   }
   for (const part of chunk(rejections, 500)) await db.from("upload_rejections").insert(part.map((r) => ({ ...r, upload_id: upload.id })));
-  for (const s of shotgunRows) await db.from("shotgun").upsert(s, { onConflict: "contact_id,tried_campaign_id", ignoreDuplicates: true });
+  // plain insert: the open-entry unique index is partial, so an already-open entry just fails quietly (23505)
+  for (const s of shotgunRows) {
+    const { error } = await db.from("shotgun").insert(s);
+    if (error && error.code !== "23505") console.error("shotgun insert", error.message);
+  }
 
   const { count } = await db.from("leads").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id);
   await audit(me, "campaigns", `Uploaded ${body.filename ?? "a lead list"} to “${campaign.name}”: ${toAdd.length} added, ${rejections.length} left out`, { campaign_id: campaign.id, counts });
@@ -264,6 +268,87 @@ async function bulkDnc(me: Me, body: any) {
   return { added, already: good.length - added, invalid };
 }
 
+
+// ---------- inbox AI: score a conversation, suggest a follow-up ----------
+async function seeConversation(me: Me, id: string) {
+  const { data: cv } = await db.from("conversations").select("*").eq("id", id).maybeSingle();
+  if (!cv) throw new HttpError(404, "Conversation not found.");
+  if (!(isAdmin(me) || cv.agent_id === me.id)) {
+    if (me.role !== "owner") throw new HttpError(403, "You can’t see that conversation.");
+    const [{ data: a }, { data: mine }] = await Promise.all([
+      db.from("profiles").select("branch_id").eq("id", cv.agent_id).single(),
+      db.from("branch_owners").select("branch_id").eq("owner_id", me.id),
+    ]);
+    if (!(mine ?? []).some((b: any) => b.branch_id === a?.branch_id)) throw new HttpError(403, "You can’t see that conversation.");
+  }
+  return cv;
+}
+
+const SCORE_SYSTEM = `You score WhatsApp conversations between an estate agent at Blue Property Group (South Africa) and a lead.
+Score how interested the lead is in doing business now, 0-100:
+90-100 asks for a valuation/viewing/call or gives times; 70-89 clearly interested, asks questions; 40-69 lukewarm or "maybe later";
+10-39 not now but polite; 0-9 hostile or asks to stop.
+opt_out is true if the lead asks not to be messaged again in any language (e.g. "stop", "remove me", "moenie my weer kontak nie", "ungangithumeleli").
+Return only JSON: {"score": number, "reason": "max 20 words, plain English", "opt_out": boolean}`;
+
+async function scoreConversation(me: Me, body: any) {
+  const cv = await seeConversation(me, String(body.conversation_id ?? ""));
+  const { data: msgs } = await db.from("messages").select("id, direction, body, sent_at").eq("conversation_id", cv.id).order("sent_at", { ascending: false }).limit(10);
+  const list = (msgs ?? []).reverse();
+  const lastIn = [...list].reverse().find((m: any) => m.direction === "in");
+  if (!lastIn) throw new HttpError(400, "There’s no reply from the lead to score yet.");
+  const transcript = list.map((m: any) => `${m.direction === "in" ? "LEAD" : "AGENT"}: ${String(m.body).slice(0, 600)}`).join("\n");
+  const out = await claude(SCORE_SYSTEM, `Conversation:\n${transcript}`, 200);
+  const score = Math.max(0, Math.min(100, Math.round(Number(out.score))));
+  if (!Number.isFinite(score)) throw new HttpError(502, "The AI reply couldn’t be read. Try again.");
+  const reason = clean(out.reason, 200);
+  const optOut = out.opt_out === true;
+  const now = new Date().toISOString();
+  await db.from("ai_scores").insert({ conversation_id: cv.id, agent_id: cv.agent_id, score, reason, opt_out: optOut, model: MODEL, source_message_id: lastIn.id });
+  await db.from("conversations").update({ score, score_reason: reason, opt_out: optOut, scored_at: now }).eq("id", cv.id);
+
+  const { data: settings } = await db.from("settings").select("hot_threshold").eq("id", 1).single();
+  const threshold = settings?.hot_threshold ?? 70;
+  const { data: hot } = await db.from("hot_leads").select("id, source").eq("conversation_id", cv.id).maybeSingle();
+  if (!hot || hot.source === "ai") { // a person's decision always wins over the AI
+    const active = score >= threshold && !optOut;
+    if (hot) await db.from("hot_leads").update({ active, updated_at: now }).eq("id", hot.id);
+    else if (active) await db.from("hot_leads").insert({ conversation_id: cv.id, contact_id: cv.contact_id, agent_id: cv.agent_id, campaign_id: cv.campaign_id, source: "ai", active: true });
+  }
+  if (optOut && !cv.is_sample) {
+    const { data: c } = await db.from("contacts").select("phone_e164, first_name, last_name").eq("id", cv.contact_id).single();
+    if (c) await db.from("dnc").upsert({ phone_e164: c.phone_e164, name: [c.first_name, c.last_name].filter(Boolean).join(" ") || null, reason: reason ?? "Asked not to be contacted", source: "ai_opt_out", needs_review: true, added_by_name: "AI (opt-out spotted)" }, { onConflict: "phone_e164", ignoreDuplicates: true });
+  }
+  return { score, reason, opt_out: optOut, hot: score >= threshold && !optOut, threshold };
+}
+
+const SUGGEST_SYSTEM = `You write one short, warm WhatsApp message an estate agent at Blue Property Group (South Africa) can send from their own phone.
+Under 300 characters, one clear purpose, at most one question, no links, sign with the agent's first name. Return only JSON: {"body": "..."}`;
+const DATE_PURPOSE: Record<string, string> = {
+  followup: "a follow-up call-back the agent promised", birthday: "wishing them a happy birthday (no sales pitch)",
+  anniversary: "the anniversary of buying their home; light touch, offer an updated valuation only if natural",
+  lease: "their lease ending soon; offer help finding their next place or with renewing", other: "checking in",
+};
+async function suggestMessage(me: Me, body: any) {
+  const type = String(body.type ?? "followup");
+  const agentFirst = me.full_name.split(" ")[0];
+  let context = "";
+  if (body.conversation_id) {
+    const cv = await seeConversation(me, String(body.conversation_id));
+    const { data: msgs } = await db.from("messages").select("direction, body").eq("conversation_id", cv.id).order("sent_at", { ascending: false }).limit(6);
+    context = (msgs ?? []).reverse().map((m: any) => `${m.direction === "in" ? "LEAD" : "AGENT"}: ${String(m.body).slice(0, 400)}`).join("\n");
+  }
+  const user = `Agent first name: ${agentFirst}
+Lead first name: ${clean(body.first_name, 40) ?? "there"}
+Purpose: ${DATE_PURPOSE[type] ?? DATE_PURPOSE.other}
+Agent's note: ${clean(body.note, 300) ?? "none"}
+${context ? `Recent conversation:\n${context}` : ""}`;
+  const out = await claude(SUGGEST_SYSTEM, user, 300);
+  const res = String(out.body ?? "").trim();
+  if (!res) throw new HttpError(502, "The AI didn’t return a message. Try again.");
+  return { body: res };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -274,6 +359,8 @@ Deno.serve(async (req) => {
       case "draft_messages": return json({ ok: true, ...(await draftMessages(me, body)) });
       case "rewrite_message": return json({ ok: true, ...(await rewriteMessage(me, body)) });
       case "bulk_dnc": return json({ ok: true, ...(await bulkDnc(me, body)) });
+      case "score_conversation": return json({ ok: true, ...(await scoreConversation(me, body)) });
+      case "suggest_message": return json({ ok: true, ...(await suggestMessage(me, body)) });
       default: throw new HttpError(400, "Unknown action.");
     }
   } catch (e) {

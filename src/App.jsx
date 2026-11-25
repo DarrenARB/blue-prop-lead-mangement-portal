@@ -13,6 +13,14 @@ import Branches from "./pages/Branches";
 import Lemlist from "./pages/Lemlist";
 import Plan from "./pages/Plan";
 import Audit from "./pages/Audit";
+import Campaigns from "./pages/Campaigns";
+import CampaignWizard from "./pages/CampaignWizard";
+import Inbox from "./pages/Inbox";
+import HotLeads from "./pages/HotLeads";
+import Dates from "./pages/Dates";
+import Dnc from "./pages/Dnc";
+import Shotgun from "./pages/Shotgun";
+import Rules from "./pages/Rules";
 
 export default function App() {
   const { session, profile, profileError, loading, isAdmin, canSeeNumbers, signOut } = useAuth();
@@ -43,6 +51,14 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Home />} />
+        <Route path="campaigns" element={<Campaigns />} />
+        <Route path="campaigns/:id" element={<CampaignWizard />} />
+        <Route path="inbox" element={<Inbox />} />
+        <Route path="hot" element={<HotLeads />} />
+        <Route path="dates" element={<Dates />} />
+        <Route path="dnc" element={<Dnc />} />
+        <Route path="shotgun" element={isAdmin || profile.role === "owner" ? <Shotgun /> : <Navigate to="/" />} />
+        <Route path="rules" element={isAdmin ? <Rules /> : <Navigate to="/" />} />
         <Route path="branches" element={isAdmin ? <Branches /> : <Navigate to="/" />} />
         <Route path="team" element={isAdmin ? <Team /> : <Navigate to="/" />} />
         <Route path="lemlist" element={canSeeNumbers ? <Lemlist /> : <Navigate to="/" />} />

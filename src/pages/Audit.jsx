@@ -3,7 +3,7 @@ import { must, supabase } from "../lib/supabase";
 import { fmtDateTime } from "../lib/format";
 import { Badge, Empty, ErrorNote, Spinner } from "../components/ui";
 
-const TYPES = { people: "People", branches: "Branches", lemlist: "lemlist", numbers: "Numbers", plan_items: "Project plan", plan_payments: "Payments", plan_drawdowns: "Drawdowns" };
+const TYPES = { people: "People", branches: "Branches", lemlist: "lemlist", numbers: "Numbers", plan_items: "Project plan", plan_payments: "Payments", plan_drawdowns: "Drawdowns", campaigns: "Campaigns", dnc: "Do Not Contact", shotgun: "Shotgun list", hot_leads: "Hot Leads", export: "Exports", settings: "Rules" };
 
 export default function Audit() {
   const [rows, setRows] = useState(null);
@@ -22,7 +22,7 @@ export default function Audit() {
         <div>
           <p className="eyebrow">Main Admin</p>
           <h1>Audit log</h1>
-          <p className="muted">Every change to people, branches, numbers and the project plan, with who did it and when. Campaign, export and Do Not Contact entries will appear here as those features go live.</p>
+          <p className="muted">Every change to people, branches, numbers and the project plan, with who did it and when.</p>
         </div>
         <select className="select" style={{ width: "auto" }} value={type} onChange={(e) => setType(e.target.value)} aria-label="Filter by type">
           <option value="all">Everything</option>

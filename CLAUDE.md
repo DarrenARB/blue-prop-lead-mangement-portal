@@ -3,18 +3,20 @@
 Multi-user portal in front of lemlist so Blue PROP (Blue Property Group, South African real estate) agents can run WhatsApp campaigns from their own numbers. Built by Fin-Link. The full product spec, lemlist findings and all 56 priced user stories are in `docs/BUILD_SPEC.md`.
 
 ## Stack
-- Front end: React 18 + Vite (plain JS/JSX, no TypeScript), `react-router-dom` HashRouter, hand-written CSS in `src/styles.css` (prototype palette: brand `#1B489B`, navy `#0C0F24`, Roboto).
+- Front end: React 18 + Vite (plain JS/JSX, no TypeScript), `react-router-dom` HashRouter, hand-written CSS in `src/styles.css`. **Blue Property Group branding**: navy `#2A3688` (`--brand`), dark navy `#161C4A` (`--navy`, sidebar), orange `#FC4F15` (`--orange`, accents only — active markers, highlights, logo; text on orange uses `--orange-d #C2380A`). Headings in Oswald, body Roboto. Logo at `public/brand/blue-property-group-logo.png`.
 - Backend: Supabase project `lqaxjvhgstdborylstzu` (Postgres + RLS, Auth, Edge Functions in Deno, Vault, pg_cron, pg_net).
 - lemlist API (`https://api.lemlist.com/api`, Basic auth with empty user) — **20 requests / 2 s per key**.
 - AI (later stages): Claude Haiku (`claude-haiku-5-5`) via the `ANTHROPIC_API_KEY` Edge Function secret.
 
 ## Layout
-- `src/pages/` — Setup (first run), Login, ChangePassword, Home, Branches (map of South Africa with icon pins, coverage circles, province strip; add/edit with address search + draggable pin), Team (people), Lemlist (connection & numbers; read-only view for Branch Owners), Plan (project plan + Fin-Link money panel), Audit.
+- `src/pages/` — Setup (first run), Login, ChangePassword, Home, Branches (map of South Africa with icon pins, coverage circles, province strip; add/edit with address search + draggable pin), Team (people), Lemlist (connection & numbers; read-only view for Branch Owners), Plan (project plan + Fin-Link money panel), Audit, Campaigns (list) + CampaignWizard (`/campaigns/:id`, 5 steps: basics, CSV leads, AI messages with WhatsApp preview, schedule, review — Launch disabled until the lemlist test is approved), Inbox (read-only threads, AI score, hot/DNC/follow-up actions), HotLeads (Excel export via `write-excel-file`, `mark_exported`), Dates (follow-ups, birthdays, anniversaries, leases; AI suggested message), Dnc, Shotgun, Rules.
+- Features that depend on something not set up yet (lemlist sync, replying, CRM push, email reminders) stay visible; clicking them shows "… isn’t working yet" via `notReady()` in `Inbox.jsx`.
 - `src/components/BranchMap.jsx`, `LocationPicker.jsx`, `src/lib/branchStyle.js` — Leaflet maps. Tiles: CARTO Positron (attribution required). Address search/reverse: OpenStreetMap Nominatim, limited to South Africa (~1 request/second; switch to a paid geocoder if volume grows).
 - `src/lib/` — `supabase.js` (client + `callFn` for Edge Functions), `auth.jsx` (session/profile context), `format.js`.
 - `supabase/functions/admin-users` — bootstrap, invite (temp password), update, deactivate, reactivate, reset_password.
-- `supabase/functions/campaigns` — process_upload (normalise phones, reject invalid/duplicate/DNC/already-in-campaign, Shotgun check), draft_messages / rewrite_message (Claude Haiku), bulk_dnc. No lemlist calls yet.
+- `supabase/functions/campaigns` — process_upload (normalise phones, reject invalid/duplicate/DNC/already-in-campaign, Shotgun check), draft_messages / rewrite_message (Claude Haiku), bulk_dnc, score_conversation (Haiku score 0–100 + reason + opt-out; AI never overrides a manual hot-lead decision; opt-outs go to DNC with needs_review), suggest_message. No lemlist calls yet.
 - `supabase/functions/lemlist` — test, available_users, connect, disconnect, sync (raises support alerts on status changes), assign, record_reconnection. Read-only towards lemlist so far.
+- Inbox tables: `conversations` (one per contact+agent, latest score cached), `messages` (lemlist_activity_id unique), `ai_scores`, `hot_leads` (source ai/manual), `key_dates`, `lemlist_events` (raw webhook payloads, Fin-Link only). Visibility via `can_see_agent()` / `can_act_for_agent()`. Changes to hot leads go through `set_hot_lead()` (logged). Super Admins can `load_inbox_samples()` / `clear_inbox_samples()` (fake +27 00 numbers, `is_sample`). The lemlist webhook receiver isn't built yet.
 - `supabase/migrations/` — schema history as applied. `supabase/seed.sql` — the 56 plan items. (`pg_net` was enabled outside migrations: `create extension pg_net;`.)
 
 ## Rules that matter
