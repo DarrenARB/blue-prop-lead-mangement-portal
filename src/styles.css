@@ -301,7 +301,15 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .msg-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #fff; }
 .dropzone { border: 2px dashed #C3CAE3; border-radius: 14px; padding: 26px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; background: #FAFBFE; }
 .checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.checklist li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: #F7F8FC; }
+.checklist li { border-radius: 10px; background: #F7F8FC; }
+.check-row, .check-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; width: 100%; border-radius: 10px; }
+.check-link { background: none; border: 1px solid transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: none; }
+.check-link:hover { border-color: #c9cee8; background: #EEF0FA; }
+.check-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.check-text { flex: 1; min-width: 0; }
+.check-go { flex: none; font-size: 13px; color: var(--muted, #5b6172); white-space: nowrap; }
+.checklist .bad .check-go { color: var(--brand); font-weight: 600; text-decoration: underline; }
+@media (max-width: 640px) { .check-link { flex-wrap: wrap; row-gap: 4px; } .check-text { flex: 1 1 calc(100% - 40px); } .check-go { margin-left: 34px; } }
 .check-ic { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
 .checklist .ok .check-ic { background: var(--okbg); color: var(--ok); }
 .checklist .bad .check-ic { background: var(--warnbg); color: var(--warn); }

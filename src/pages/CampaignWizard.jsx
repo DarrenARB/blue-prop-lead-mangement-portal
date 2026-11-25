@@ -569,27 +569,42 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
 // ---------- 5. Review ----------
 function StepReview({ c, ctx, msgs, editable, go, onDelete }) {
   const stored = useStoredDraft();
+  const { canSeeNumbers } = useAuth();
   const n = ctx.number;
+  // which message needs attention, so the line says exactly what to fix
+  const msgProblem = msgs.findIndex((m) => !m.body.trim() || unknownTags(m.body).length);
+  const msgLabel = msgProblem < 0 ? "All three messages written"
+    : !msgs[msgProblem].body.trim() ? `Message ${msgProblem + 1} is empty` : `Message ${msgProblem + 1} has a placeholder that won’t fill in (${unknownTags(msgs[msgProblem].body)[0]})`;
+  const numbers = canSeeNumbers ? "/lemlist" : null; // only people who can open lemlist & numbers get a link
   const checks = [
-    { ok: !!c.name, label: "Campaign has a name", step: 1 },
-    { ok: !!n, label: n ? `Sends from ${ctx.agent?.full_name}’s number${n.phone_last4 ? ` ending ${n.phone_last4}` : ""}` : `${ctx.agent?.full_name ?? "The agent"} has no WhatsApp number linked yet`, fix: n ? null : "An admin links it on lemlist & numbers." },
-    { ok: !!n && n.status === "ok", label: n ? `Number status: ${NUMBER_STATUS[n.status]?.[0] ?? n.status}` : "Number status unknown", warn: n && n.status !== "ok" },
-    { ok: ctx.leads > 0, label: `${ctx.leads.toLocaleString("en-ZA")} lead${ctx.leads === 1 ? "" : "s"} ready`, step: 2 },
-    { ok: msgs.every((m) => m.body.trim()) && msgs.every((m) => !unknownTags(m.body).length), label: "All three messages written", step: 3 },
-    { ok: !!c.schedule?.days?.length, label: c.schedule?.days?.length ? `Sends ${c.schedule.days.map((d) => DAYS.find((x) => x[0] === d)?.[1]).join(", ")}, ${c.schedule.start}–${c.schedule.end}` : "Sending window not set", step: 4 },
+    { ok: !!c.name, label: c.name ? "Campaign has a name" : "Give the campaign a name", step: 1 },
+    { ok: !!n, label: n ? `Sends from ${ctx.agent?.full_name}’s number${n.phone_last4 ? ` ending ${n.phone_last4}` : ""}` : `${ctx.agent?.full_name ?? "The agent"} has no WhatsApp number linked yet`, fix: n || numbers ? null : "An admin links it on lemlist & numbers.", to: numbers, toLabel: "lemlist & numbers" },
+    { ok: !!n && n.status === "ok", label: n ? `Number status: ${NUMBER_STATUS[n.status]?.[0] ?? n.status}` : "Number status unknown (link a number first)", to: numbers, toLabel: "lemlist & numbers" },
+    { ok: ctx.leads > 0, label: ctx.leads ? `${ctx.leads.toLocaleString("en-ZA")} lead${ctx.leads === 1 ? "" : "s"} ready` : "No leads uploaded yet", step: 2 },
+    { ok: msgProblem < 0, label: msgLabel, step: 3 },
+    { ok: !!c.schedule?.days?.length, label: c.schedule?.days?.length ? `Sends ${c.schedule.days.map((d) => DAYS.find((x) => x[0] === d)?.[1]).join(", ")}, ${c.schedule.start}–${c.schedule.end}` : "Sending days and times not set", step: 4 },
   ];
   const ready = checks.every((x) => x.ok);
   return (
     <section className="card stack">
       <h2>Review</h2>
       <ul className="checklist">
-        {checks.map((x, i) => (
-          <li key={i} className={x.ok ? "ok" : "bad"}>
-            <span className="check-ic" aria-hidden="true">{x.ok ? "✓" : "!"}</span>
-            <span>{x.label}{x.fix && <span className="muted small"> · {x.fix}</span>}</span>
-            {!x.ok && x.step && editable && <button className="link-btn small" onClick={() => go(x.step)}>Fix</button>}
-          </li>
-        ))}
+        {checks.map((x, i) => {
+          const inner = (
+            <>
+              <span className="check-ic" aria-hidden="true">{x.ok ? "✓" : "!"}</span>
+              <span className="check-text">{x.label}{x.fix && <span className="muted small"> · {x.fix}</span>}</span>
+              {(x.step || x.to) && <span className="check-go">{x.ok ? (x.step ? `View ${STEPS[x.step - 1]}` : `Open ${x.toLabel}`) : x.step ? `Fix in ${STEPS[x.step - 1]}` : `Fix on ${x.toLabel}`} ›</span>}
+            </>
+          );
+          return (
+            <li key={i} className={x.ok ? "ok" : "bad"}>
+              {x.step ? <button type="button" className="check-link" onClick={() => go(x.step)}>{inner}</button>
+                : x.to ? <Link className="check-link" to={x.to}>{inner}</Link>
+                : <span className="check-row">{inner}</span>}
+            </li>
+          );
+        })}
       </ul>
       <div className="note note-info">
         <strong>Launching isn’t switched on yet.</strong> The first launch will be tested with lemlist once Fin-Link and Blue PROP approve it. Until then this campaign stays a draft{ready ? " — it’s ready to go when launching opens" : ""}.
