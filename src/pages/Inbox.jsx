@@ -1,10 +1,55 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ago, fmtDateTime, fmtPhone } from "../lib/format";
 import { Badge, CopyButton, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
 import { DATE_TYPES } from "./Dates";
 import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
+
+// The full back-and-forth with a lead. Long chats scroll inside the box (the page doesn't grow forever),
+// open at the newest message, are split by day, and offer a "Newest" button when you've scrolled up.
+const dayLabel = (iso) => {
+  const d = new Date(iso), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1);
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  if (same(d, t)) return "Today";
+  if (same(d, y)) return "Yesterday";
+  return d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short", ...(d.getFullYear() !== t.getFullYear() ? { year: "numeric" } : {}) });
+};
+const timeOnly = (iso) => new Date(iso).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+
+function ChatHistory({ msgs }) {
+  const box = useRef(null);
+  const [away, setAway] = useState(false); // scrolled up from the newest message
+  useLayoutEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight; }, [msgs]);
+  const onScroll = () => { const el = box.current; if (el) setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 80); };
+  const toNewest = () => box.current?.scrollTo({ top: box.current.scrollHeight, behavior: "smooth" });
+  if (!msgs) return <Spinner />;
+  const ins = msgs.filter((m) => m.direction === "in").length;
+  let lastDay = null;
+  return (
+    <div className="chat">
+      <div className="chat-count small muted">
+        {msgs.length} message{msgs.length === 1 ? "" : "s"}{ins ? ` · ${ins} from the lead` : ""}{msgs.length > 6 ? " · scroll up for earlier messages" : ""}
+      </div>
+      <div className="wa-thread chat-scroll" ref={box} onScroll={onScroll} aria-label="Conversation" tabIndex={0}>
+        {msgs.length === 0 ? <p className="muted small">No messages stored yet.</p> : msgs.map((m) => {
+          const day = new Date(m.sent_at).toDateString();
+          const sep = day !== lastDay; lastDay = day;
+          return (
+            <div key={m.id} className="chat-item">
+              {sep && <div className="chat-day"><span>{dayLabel(m.sent_at)}</span></div>}
+              <div className={`wa-msg ${m.direction}`}>
+                <div className="wa-bubble">{m.body}</div>
+                <div className="wa-meta">{m.direction === "out" ? (m.step ? `Message ${m.step} · ` : "") + (m.status ? `${m.status} · ` : "") : ""}{timeOnly(m.sent_at)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {away && <button type="button" className="btn btn-sm chat-newest" onClick={toNewest}>↓ Newest</button>}
+    </div>
+  );
+}
 
 export const notReady = (toast, what) => toast(`${what} isn’t working yet. It’s switched on in a later stage.`, "warn");
 export const scoreTone = (s, t = 70) => (s == null ? "muted" : s >= t ? "ok" : s >= 40 ? "warn" : "muted");
@@ -178,14 +223,7 @@ function Thread({ conv, threshold, onBack, onChanged }) {
       </div>
       {conv.opt_out && <OptOutNote conv={conv} canAct={canAct} onChanged={onChanged} />}
 
-      <div className="wa-thread" aria-label="Messages">
-        {!msgs ? <Spinner /> : msgs.length === 0 ? <p className="muted small">No messages stored yet.</p> : msgs.map((m) => (
-          <div key={m.id} className={`wa-msg ${m.direction}`}>
-            <div className="wa-bubble">{m.body}</div>
-            <div className="wa-meta">{m.direction === "out" ? `Message ${m.step ?? ""}`.trim() + (m.status ? ` · ${m.status}` : "") + " · " : ""}{fmtDateTime(m.sent_at)}</div>
-          </div>
-        ))}
-      </div>
+      <ChatHistory msgs={msgs} />
 
 
       {canAct && (
