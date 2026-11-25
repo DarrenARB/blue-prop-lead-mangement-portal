@@ -332,13 +332,10 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .chat { position: relative; display: grid; gap: 6px; }
 /* The open conversation is exactly one screen tall: lead details at the top, Next step at the bottom,
    and the chat fills the space between and scrolls on its own. Nothing gets pushed out of view. */
-.thread { position: sticky; top: 16px; height: calc(100vh - 32px); height: calc(100dvh - 32px); min-height: 520px; }
 .thread > * { flex: none; }
 .thread > .chat { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .chat-scroll { flex: 1 1 auto; min-height: 140px; max-height: none; }
-.thread { scroll-margin-top: 16px; }
 .act-short { display: none; }
-@media (max-width: 960px) { .thread { top: 64px; height: calc(100dvh - 76px); min-height: 480px; scroll-margin-top: 64px; } }
 /* phones: one compact row of Next step buttons and a shorter score card, so the chat gets the room */
 @media (max-width: 600px) {
   .thread { gap: 10px; }
@@ -360,7 +357,7 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 
 /* ---------- inbox ---------- */
 .inbox { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
-.inbox-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 230px); position: sticky; top: 16px; }
+.inbox-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .conv-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .conv { width: 100%; text-align: left; border: 0; background: transparent; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
 .conv:hover { background: #F4F6FB; }
@@ -387,7 +384,7 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
   .inbox.has-open .inbox-list { display: none; }
   .inbox:not(.has-open) .thread, .inbox:not(.has-open) .inbox-empty { display: none; }
   .inbox-back { display: inline-flex; }
-  .inbox-list { position: static; max-height: none; }
+
 }
 
 /* ---------- dates ---------- */
@@ -402,7 +399,7 @@ details > summary { cursor: pointer; }
 .auth-side h1 em, .auth-side .hl { color: var(--orange); font-style: normal; }
 @media (max-width: 900px) {
   .thread-head { flex-wrap: wrap; }
-  .inbox-back { order: -1; flex-basis: 100%; justify-content: flex-start; width: fit-content; }
+  .inbox-back { order: -1; padding: 0 10px; }
   .page-head .row { flex-wrap: wrap; }
 }
 
@@ -455,8 +452,6 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
 .help-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .help-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #fff; border-radius: 10px; padding: 8px 10px; }
 /* demo data banner */
-.demo-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--orangebg); border: 1px dashed #F5A98B; color: #5A2A12; border-radius: 12px; padding: 10px 14px; margin-bottom: 18px; font-size: 13.5px; }
-.demo-banner > span:nth-child(2) { flex: 1 1 280px; }
 .demo-pill { background: var(--orange-d); color: #fff; font-weight: 700; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
 .ac-list li.dim { opacity: .55; cursor: default; }
 .picked { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--brand); background: #F2F4FB; border-radius: 10px; padding: 10px 12px; }
@@ -511,3 +506,49 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
 .reason-opt:hover { border-color: var(--brand); }
 .reason-opt.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 .reason-opt:focus-within { outline: 3px solid var(--orange); outline-offset: 2px; }
+
+/* ---------- Inbox fits the screen exactly ----------
+   The page never scrolls: the list scrolls inside its box, the chat scrolls inside the conversation,
+   and the lead details and Next step stay put. Below ~560px of height the page may scroll as a fallback. */
+.main:has(.inbox-page) { padding-top: 18px; padding-bottom: 16px; max-width: none; }
+.inbox-page { display: flex; flex-direction: column; height: calc(100dvh - 34px); min-height: 520px; }
+.inbox-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 8px; flex: none; }
+.inbox-title { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
+.inbox-title h1 { margin: 0; line-height: 1.1; }
+.inbox-tools { gap: 8px; flex-wrap: wrap; }
+.inbox-tools .agent-filter { margin: 0; }
+.inbox-tabs { margin-bottom: 12px; flex: none; overflow-y: hidden; }
+.inbox-page > .inbox { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+.inbox-page .inbox-list { min-height: 0; overflow: hidden; }
+.inbox-page .conv-list { flex: 1 1 auto; min-height: 0; }
+.inbox-page .thread { min-height: 0; overflow-y: auto; }
+.inbox-page .inbox-empty { min-height: 0; }
+.inbox-page > .card { flex: none; }
+/* tighter conversation panel so the chat gets most of the height */
+.inbox-page .thread { gap: 10px; padding: 14px 16px; }
+.inbox-page .score-card { padding: 10px 14px; gap: 12px; }
+.inbox-page .score-num { width: 46px; height: 46px; font-size: 19px; }
+.inbox-page .thread-actions { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; }
+.inbox-page .act-row { gap: 6px; }
+.inbox-page .act { min-height: 36px; padding: 0 12px; font-size: 13.5px; }
+.inbox-page .chat { gap: 4px; }
+@media (max-width: 960px) {
+  .inbox-page { height: calc(100dvh - 60px - 26px); min-height: 440px; }
+  .main:has(.inbox-page) { padding-top: 12px; padding-bottom: 12px; }
+  .inbox-page .inbox { grid-template-rows: minmax(0, 1fr); }
+  /* an open conversation gets the whole phone screen; Back returns to the list, header and tabs */
+  .inbox-page.has-open .inbox-head, .inbox-page.has-open .inbox-tabs { display: none; }
+  .inbox-page.has-open { height: calc(100dvh - 60px - 24px); }
+  .inbox-head { margin-bottom: 4px; }
+  .inbox-title .small { display: none; }
+}
+@media (max-width: 600px) {
+  .inbox-page .thread { padding: 10px 12px; gap: 8px; }
+  .inbox-page .thread-head { gap: 8px; }
+  .inbox-page .thread-head h2 { font-size: 18px; }
+  .inbox-page .thread-actions { padding: 6px; }
+  .inbox-page .thread-actions .act-title { display: none; }
+  .inbox-page .thread-actions .act-row { width: 100%; }
+  .inbox-page .thread-actions .act { min-height: 48px; }
+  .inbox-tools .agent-filter .select { min-width: 140px; }
+}

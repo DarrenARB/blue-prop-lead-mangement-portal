@@ -113,22 +113,20 @@ export default function Inbox() {
   }
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">{isAdmin ? "All agents" : profile.role === "owner" ? "Your branches" : "Your WhatsApp"}</p>
+    <div className={`inbox-page ${open ? "has-open" : ""}`}>
+      {/* compact header: everything above the inbox fits in two short rows so the inbox gets the screen */}
+      <div className="inbox-head">
+        <div className="inbox-title">
           <h1>Inbox</h1>
-          <p className="muted">Every reply to a portal campaign, scored by AI. This is read-only: reply from WhatsApp on your phone.</p>
+          <span className="muted small">{isAdmin ? "All agents" : profile.role === "owner" ? "Your branches" : "Your WhatsApp"} · scored by AI · read-only, reply from WhatsApp on your phone</span>
         </div>
-        <div className="row">
-          {isFinLink && !hasSamples && <button className="btn" disabled={busy === "samples"} onClick={() => samples(true)}>Load demo data</button>}
-          <button className="btn" onClick={() => notReady(toast, "Syncing replies from lemlist")}>Check for new replies</button>
+        <div className="row inbox-tools">
+          <AgentFilter value={agentF} onChange={(v) => { setAgentF(v); setOpenId(null); }} />
+          {isFinLink && !hasSamples && <button className="btn btn-sm" disabled={busy === "samples"} onClick={() => samples(true)}>Load demo data</button>}
+          <button className="btn btn-sm" onClick={() => notReady(toast, "Syncing replies from lemlist")}>Check for new replies</button>
         </div>
       </div>
-
-
-      <div className="list-tools"><span /><AgentFilter value={agentF} onChange={(v) => { setAgentF(v); setOpenId(null); }} /></div>
-      <div className="tabs" role="tablist" aria-label="Filter conversations">
+      <div className="tabs inbox-tabs" role="tablist" aria-label="Filter conversations">
         {[["all", "All", (convs ?? []).filter((c) => !agentF || c.agent_id === agentF).length], ["unread", "Unread", count("unread")], ["hot", "Hot", count("hot")], ["unscored", "Not scored", count("unscored")]].map(([k, l, n]) => (
           <button key={k} role="tab" aria-selected={filter === k} className={`tab ${filter === k ? "active" : ""}`} onClick={() => setFilter(k)}>{l} <span className="tab-n">{n}</span></button>
         ))}
@@ -167,7 +165,7 @@ export default function Inbox() {
             : <div className="card inbox-empty"><p className="muted">Pick a conversation to read it.</p></div>}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -202,10 +200,8 @@ function Thread({ conv, threshold, onBack, onChanged }) {
   }
   const c = conv.contact;
 
-  const panel = useRef(null);
-  useEffect(() => { panel.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }); }, [conv.id]);
   return (
-    <div className="card thread" ref={panel}>
+    <div className="card thread">
       <div className="thread-head">
         <button className="btn btn-sm inbox-back" onClick={onBack}>← Back</button>
         <div style={{ flex: 1, minWidth: 0 }}>
