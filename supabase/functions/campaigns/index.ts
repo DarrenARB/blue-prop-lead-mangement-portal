@@ -58,7 +58,7 @@ async function audit(me: Me, type: string, summary: string, data?: unknown) {
 }
 
 // ---------- lead upload ----------
-type Row = { phone?: string; first_name?: string; last_name?: string; suburb?: string; email?: string; row_no?: number };
+type Row = { phone?: string; first_name?: string; last_name?: string; suburb?: string; email?: string; unit?: string; complex?: string; street_number?: string; street?: string; row_no?: number };
 const cleanEmail = (v: unknown) => { const e = String(v ?? "").trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? e.slice(0, 160) : null; };
 
 async function processUpload(me: Me, body: any) {
@@ -75,7 +75,7 @@ async function processUpload(me: Me, body: any) {
 
   const rejections: { row_no: number; phone_raw: string | null; name: string | null; reason: string; detail?: string }[] = [];
   const seen = new Set<string>();
-  const good: { phone: string; first_name: string | null; last_name: string | null; suburb: string | null; email: string | null; row_no: number }[] = [];
+  const good: { phone: string; first_name: string | null; last_name: string | null; suburb: string | null; email: string | null; unit: string | null; complex: string | null; street_number: string | null; street: string | null; row_no: number }[] = [];
 
   rows.forEach((r, i) => {
     const row_no = r.row_no ?? i + 2;
@@ -84,7 +84,8 @@ async function processUpload(me: Me, body: any) {
     if (!phone) { rejections.push({ row_no, phone_raw: clean(r.phone, 40), name, reason: "invalid_number" }); return; }
     if (seen.has(phone)) { rejections.push({ row_no, phone_raw: clean(r.phone, 40), name, reason: "duplicate", detail: "Appears more than once in this file" }); return; }
     seen.add(phone);
-    good.push({ phone, first_name: clean(r.first_name, 60), last_name: clean(r.last_name, 60), suburb: clean(r.suburb, 80), email: cleanEmail(r.email), row_no });
+    good.push({ phone, first_name: clean(r.first_name, 60), last_name: clean(r.last_name, 60), suburb: clean(r.suburb, 80), email: cleanEmail(r.email),
+      unit: clean(r.unit, 20), complex: clean(r.complex, 80), street_number: clean(r.street_number, 20), street: clean(r.street, 120), row_no });
   });
 
   const phones = good.map((g) => g.phone);
@@ -104,7 +105,7 @@ async function processUpload(me: Me, body: any) {
   // existing contacts
   const contactByPhone = new Map<string, any>();
   for (const part of chunk(phones, 500)) {
-    const { data } = await db.from("contacts").select("id, phone_e164, first_name, last_name, suburb, email").in("phone_e164", part);
+    const { data } = await db.from("contacts").select("id, phone_e164, first_name, last_name, suburb, email, unit, complex, street_number, street").in("phone_e164", part);
     for (const c of data ?? []) contactByPhone.set(c.phone_e164, c);
   }
   const existingIds = [...contactByPhone.values()].map((c) => c.id);
@@ -147,7 +148,7 @@ async function processUpload(me: Me, body: any) {
   }
 
   // create new contacts, fill blanks on existing ones
-  const newContacts = toAdd.filter((g) => !contactByPhone.has(g.phone)).map((g) => ({ phone_e164: g.phone, first_name: g.first_name, last_name: g.last_name, suburb: g.suburb, email: g.email }));
+  const newContacts = toAdd.filter((g) => !contactByPhone.has(g.phone)).map((g) => ({ phone_e164: g.phone, first_name: g.first_name, last_name: g.last_name, suburb: g.suburb, email: g.email, unit: g.unit, complex: g.complex, street_number: g.street_number, street: g.street }));
   for (const part of chunk(newContacts, 500)) {
     const { data, error } = await db.from("contacts").upsert(part, { onConflict: "phone_e164" }).select("id, phone_e164");
     if (error) throw new HttpError(500, error.message);
@@ -155,8 +156,13 @@ async function processUpload(me: Me, body: any) {
   }
   for (const g of toAdd) {
     const c = contactByPhone.get(g.phone);
-    if (c && (!c.first_name && g.first_name || !c.suburb && g.suburb || !c.email && g.email)) {
-      await db.from("contacts").update({ first_name: c.first_name ?? g.first_name, last_name: c.last_name ?? g.last_name, suburb: c.suburb ?? g.suburb, email: c.email ?? g.email }).eq("id", c.id);
+    // existing people: fill in what we didn't know; a newer address replaces an old one (people move)
+    const hasNewAddress = !!(g.complex || g.street);
+    if (c && "first_name" in c && (!c.first_name && g.first_name || !c.suburb && g.suburb || !c.email && g.email || hasNewAddress)) {
+      await db.from("contacts").update({
+        first_name: c.first_name ?? g.first_name, last_name: c.last_name ?? g.last_name, suburb: g.suburb ?? c.suburb, email: c.email ?? g.email,
+        ...(hasNewAddress ? { unit: g.unit, complex: g.complex, street_number: g.street_number, street: g.street } : {}),
+      }).eq("id", c.id);
     }
   }
 
@@ -191,26 +197,44 @@ Rules:
 - Each message asks at most ONE clear question.
 - No links, no emojis in message 1, no prices, statistics or promises you can't know. No ALL CAPS.
 - Use the placeholder {{firstName}} for the lead's first name. Use {{suburb}} only if it fits naturally.
+- Only when told the leads have addresses: {{address}} becomes e.g. "unit 12 in Red Complex" or "14 Oak Street", and {{complex}} is just
+  the complex name. {{address}} already includes the complex, so never put {{address}} and {{complex}} in the same sentence.
+  Use them naturally in message 1 (e.g. "I see you're at {{address}}" or "similar homes to yours in {{complex}}"), at most once per message.
 - Message 1 introduces the agent by first name and Blue PROP and states the reason for reaching out.
 - Message 2 is a friendly follow-up that adds one useful point.
 - Message 3 is a polite last message that makes it easy to say not now (for example "reply STOP and I won't message again").
 - Sign with the agent's first name only.
-Return only JSON, no commentary.`;
+Return the messages with the respond tool.`;
 
-async function claude(system: string, user: string, maxTokens = 900) {
+// Every AI call uses a forced "respond" tool, so the answer always comes back as clean, structured data
+// (free-text JSON broke whenever a message had line breaks or quotes).
+async function claude(system: string, user: string, maxTokens: number, schema: Record<string, unknown>) {
   if (!ANTHROPIC_KEY) throw new HttpError(500, "The AI key isn’t set in Supabase secrets (ANTHROPIC_API_KEY).");
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
-  });
-  const out = await r.json().catch(() => ({}));
-  if (!r.ok) throw new HttpError(502, `The AI service returned an error (${r.status})${out?.error?.message ? `: ${out.error.message}` : ""}.`);
-  const text = (out.content ?? []).map((c: any) => c.text ?? "").join("");
-  const s = text.indexOf("{"), e = text.lastIndexOf("}");
-  if (s < 0 || e < 0) throw new HttpError(502, "The AI reply couldn’t be read. Try again.");
-  try { return JSON.parse(text.slice(s, e + 1)); } catch { throw new HttpError(502, "The AI reply couldn’t be read. Try again."); }
+  let last = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL, max_tokens: maxTokens, system,
+        tools: [{ name: "respond", description: "Return the result.", input_schema: schema }],
+        tool_choice: { type: "tool", name: "respond" },
+        messages: [{ role: "user", content: user }],
+      }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (r.status === 429 || r.status >= 500) { last = `The AI service is busy (${r.status}). Try again in a moment.`; await new Promise((res) => setTimeout(res, 1200)); continue; }
+    if (!r.ok) throw new HttpError(502, `The AI service returned an error (${r.status})${out?.error?.message ? `: ${out.error.message}` : ""}.`);
+    const tool = (out.content ?? []).find((c: any) => c.type === "tool_use");
+    if (tool?.input && typeof tool.input === "object") return tool.input as any;
+    last = "The AI reply couldn’t be read. Try again.";
+  }
+  throw new HttpError(502, last || "The AI reply couldn’t be read. Try again.");
 }
+
+const S_MESSAGES = { type: "object", properties: { messages: { type: "array", minItems: 3, maxItems: 3, items: { type: "object", properties: { body: { type: "string" } }, required: ["body"] } } }, required: ["messages"] };
+const S_BODY = { type: "object", properties: { body: { type: "string" } }, required: ["body"] };
+const S_SCORE = { type: "object", properties: { score: { type: "integer", minimum: 0, maximum: 100 }, reason: { type: "string" }, opt_out: { type: "boolean" } }, required: ["score", "reason", "opt_out"] };
 
 const GOALS: Record<string, string> = {
   valuation: "offer homeowners a free, no-obligation valuation of their home",
@@ -229,8 +253,9 @@ Goal: ${GOALS[b.goal] ?? clean(b.goal, 200) ?? GOALS.other}
 Who they're messaging: ${clean(b.audience, 300) ?? "homeowners in the area"}
 What they're offering: ${clean(b.offer, 300) ?? "a free valuation and honest advice"}
 Tone: ${clean(b.tone, 30) ?? "friendly"}
-Return: {"messages":[{"body":"..."},{"body":"..."},{"body":"..."}]}`;
-  const out = await claude(SYSTEM, user);
+${body.has_complex ? "Leads have addresses, many in complexes: you may use {{address}} and {{complex}}." : body.has_address ? "Leads have street addresses: you may use {{address}}." : "Leads have no addresses: do not use {{address}} or {{complex}}."}
+Return the three messages with the respond tool.`;
+  const out = await claude(SYSTEM, user, 1200, S_MESSAGES);
   const msgs = (out.messages ?? []).map((m: any) => String(m.body ?? m ?? "").trim()).filter(Boolean).slice(0, 3);
   if (msgs.length !== 3) throw new HttpError(502, "The AI didn’t return three messages. Try again.");
   return { messages: msgs, model: MODEL };
@@ -240,11 +265,11 @@ async function rewriteMessage(_me: Me, body: any) {
   const text = clean(body.body, 1200);
   if (!text) throw new HttpError(400, "There’s no message to rewrite.");
   const how = clean(body.instruction, 200) ?? "make it shorter and more personal";
-  const user = `Rewrite this WhatsApp message (message ${Number(body.position) || 1} of 3). Keep {{firstName}} / {{suburb}} placeholders if present.
+  const user = `Rewrite this WhatsApp message (message ${Number(body.position) || 1} of 3). Keep any {{...}} placeholders (firstName, suburb, address, complex) exactly as written.
 Instruction: ${how}
 Message: """${text}"""
-Return: {"body":"..."}`;
-  const out = await claude(SYSTEM, user, 500);
+Return the rewritten message with the respond tool.`;
+  const out = await claude(SYSTEM, user, 600, S_BODY);
   const res = String(out.body ?? "").trim();
   if (!res) throw new HttpError(502, "The AI didn’t return a message. Try again.");
   return { body: res };
@@ -300,7 +325,7 @@ Score how interested the lead is in doing business now, 0-100:
 opt_out is true when the lead makes clear they don't want to be contacted, in any language: "stop", "remove me", "unsubscribe",
 "not interested" / "no thanks, not interested", "wrong number", "don't message me", "moenie my weer kontak nie", "nie belangstel nie",
 "ungangithumeleli", or an angry reply about being messaged. A soft "not right now" / "maybe later" / "not yet" is NOT an opt-out.
-Return only JSON: {"score": number, "reason": "max 20 words, plain English", "opt_out": boolean}`;
+Return score (0-100), reason (max 20 words, plain English) and opt_out with the respond tool.`;
 
 async function scoreConversation(me: Me, body: any) {
   const cv = await seeConversation(me, String(body.conversation_id ?? ""));
@@ -309,7 +334,7 @@ async function scoreConversation(me: Me, body: any) {
   const lastIn = [...list].reverse().find((m: any) => m.direction === "in");
   if (!lastIn) throw new HttpError(400, "There’s no reply from the lead to score yet.");
   const transcript = list.map((m: any) => `${m.direction === "in" ? "LEAD" : "AGENT"}: ${String(m.body).slice(0, 600)}`).join("\n");
-  const out = await claude(SCORE_SYSTEM, `Conversation:\n${transcript}`, 200);
+  const out = await claude(SCORE_SYSTEM, `Conversation:\n${transcript}`, 300, S_SCORE);
   const score = Math.max(0, Math.min(100, Math.round(Number(out.score))));
   if (!Number.isFinite(score)) throw new HttpError(502, "The AI reply couldn’t be read. Try again.");
   const reason = clean(out.reason, 200);
@@ -337,7 +362,7 @@ async function scoreConversation(me: Me, body: any) {
 }
 
 const SUGGEST_SYSTEM = `You write one short, warm WhatsApp message an estate agent at Blue Property Group (South Africa) can send from their own phone.
-Under 300 characters, one clear purpose, at most one question, no links, sign with the agent's first name. Return only JSON: {"body": "..."}`;
+Under 300 characters, one clear purpose, at most one question, no links, sign with the agent's first name. Return the message with the respond tool.`;
 const DATE_PURPOSE: Record<string, string> = {
   followup: "a follow-up call-back the agent promised", birthday: "wishing them a happy birthday (no sales pitch)",
   anniversary: "the anniversary of buying their home; light touch, offer an updated valuation only if natural",
@@ -357,7 +382,7 @@ Lead first name: ${clean(body.first_name, 40) ?? "there"}
 Purpose: ${DATE_PURPOSE[type] ?? DATE_PURPOSE.other}
 Agent's note: ${clean(body.note, 300) ?? "none"}
 ${context ? `Recent conversation:\n${context}` : ""}`;
-  const out = await claude(SUGGEST_SYSTEM, user, 300);
+  const out = await claude(SUGGEST_SYSTEM, user, 400, S_BODY);
   const res = String(out.body ?? "").trim();
   if (!res) throw new HttpError(502, "The AI didn’t return a message. Try again.");
   return { body: res };

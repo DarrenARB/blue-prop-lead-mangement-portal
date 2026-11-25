@@ -51,3 +51,14 @@ export const fmtDateTime = (iso) =>
 
 export const initials = (name = "") =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
+
+// What {{address}} becomes for a lead: "unit 12 in Red Complex", "Red Complex", "14 Oak Street" or null.
+// Keep in step with public.contact_address() in the database.
+export function contactAddress(c) {
+  const t = (v) => (v == null ? "" : String(v).trim());
+  const unit = t(c?.unit).replace(/^(unit|flat|apt\.?|apartment)\s*/i, "");
+  if (t(c?.complex)) return unit ? `unit ${unit} in ${t(c.complex)}` : t(c.complex);
+  if (t(c?.street)) return [t(c.street_number), t(c.street)].filter(Boolean).join(" ");
+  return null;
+}
+export const ADDRESS_FALLBACK = "your home";

@@ -31,6 +31,10 @@ export function parseCsv(text) {
 export function guessField(header) {
   const h = header.toLowerCase().replace(/[^a-z]/g, "");
   if (/(email|emailaddress|mail)/.test(h)) return "email";
+  if (/^(unit|unitno|unitnumber|flat|flatno|apartment|apt|door|doorno)$/.test(h)) return "unit";
+  if (/(complex|estate|building|block|development|scheme)/.test(h)) return "complex";
+  if (/^(streetnumber|streetno|housenumber|houseno|erf|erfno|standno|plotno)$/.test(h)) return "street_number";
+  if (/^(street|streetname|road|roadname|address|streetaddress|address1|addressline1)$/.test(h)) return "street";
   if (/(mobile|cell|phone|whatsapp|number|tel|contact)/.test(h)) return "phone";
   if (/^(first|firstname|name|givenname|fname)$/.test(h) || h === "firstnames") return "first_name";
   if (/(last|surname|lname|familyname)/.test(h)) return "last_name";

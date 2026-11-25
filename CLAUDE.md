@@ -26,6 +26,9 @@ Multi-user portal in front of lemlist so Blue PROP (Blue Property Group, South A
 - WhatsApp phone numbers are **encrypted** (`phone_enc`, pgp_sym with a Vault key `phone_encryption_key`; `phone_hash` HMAC for uniqueness). Write only via `set_number_phone()` (service role). Read only via `list_whatsapp_numbers()`. Never log full numbers — last 4 digits only.
 - lemlist returns a WhatsApp account's **profile name**, not its phone number, so admins enter each number once.
 - Only lemlist users connected in the portal are synced. **Production:** Blue PROP's 5 WhatsApp numbers sit under Gerrit Nel's lemlist user (`usr_a3ThpyZt4XhfgZHm8`) and are used by his sales team. **Development/testing:** only Brett Eastwood's lemlist user (`usr_AiqYkmDHSr3zFu5Cg`, one of those numbers) is connected.
+- Lead address: contacts have `unit`, `complex`, `street_number`, `street` (CSV columns; template includes them). Placeholders `{{address}}` ("unit 12 in Red Complex" / "14 Oak Street", fallback "your home"; `contact_address()` SQL = `contactAddress()` JS), `{{complex}}`, `{{unit}}`, `{{streetNumber}}`, `{{street}}`. When launching, send these to lemlist as lead variables. A newer upload's address replaces an old one.
+- AI calls (campaigns function) use a forced `respond` tool with a JSON schema, never free-text JSON.
+- Campaign wizard autosaves every step (`useAutosave`, ~0.8 s after typing, and on leaving the step/page).
 - Leads: lemlist accepts phone-only leads (no email needed) and phones in international format, so contacts are stored as E.164 (`+27…`). SA mobiles are normalised from 082…/27…/0027… forms.
 - Sales people (existing and new) are added per branch; each gets an Agent login and their own WhatsApp number in lemlist.
 - Blue PROP's older lemlist campaigns (e.g. Portobello Place, Homestead) are deliberately **not** imported — the portal only shows campaigns created through it.

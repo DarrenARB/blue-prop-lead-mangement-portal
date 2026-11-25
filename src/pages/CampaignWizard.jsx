@@ -2,21 +2,56 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
-import { NUMBER_STATUS, fmtDateTime } from "../lib/format";
+import { ADDRESS_FALLBACK, NUMBER_STATUS, contactAddress, fmtDateTime } from "../lib/format";
 import { downloadCsv, guessField, parseCsv, readFile } from "../lib/csv";
 import { Badge, ErrorNote, Field, Spinner, useToast } from "../components/ui";
 import { CAMPAIGN_STATUS, GOALS } from "./Campaigns";
 
 const STEPS = ["Basics", "Leads", "Messages", "Schedule", "Review"];
+
+// Saves a draft step automatically shortly after you stop typing, and straight away if you leave the step or the page,
+// so nothing is lost when a campaign is finished later.
+function useAutosave(value, saveFn, enabled, delay = 800) {
+  const [state, setState] = useState("idle"); // idle | pending | saving | saved | error
+  const latest = useRef({ value, saveFn, dirty: false });
+  latest.current.value = value; latest.current.saveFn = saveFn;
+  const first = useRef(true);
+  const flush = useCallback(async () => {
+    if (!latest.current.dirty) return;
+    latest.current.dirty = false;
+    setState("saving");
+    const ok = await latest.current.saveFn(latest.current.value);
+    setState(ok === false ? "error" : "saved");
+  }, []);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (!enabled) return;
+    latest.current.dirty = true; setState("pending");
+    const t = setTimeout(flush, delay);
+    return () => clearTimeout(t);
+  }, [JSON.stringify(value), enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onLeave = () => { if (latest.current.dirty) latest.current.saveFn(latest.current.value); };
+    window.addEventListener("beforeunload", onLeave);
+    return () => { window.removeEventListener("beforeunload", onLeave); flush(); }; // leaving the step saves too
+  }, [flush]);
+  return state;
+}
+
+function SaveState({ state }) {
+  if (state === "idle") return <span className="save-state muted small">Saved automatically as you go</span>;
+  const text = { pending: "Unsaved changes…", saving: "Saving…", saved: "✓ Draft saved", error: "Couldn’t save. Check your connection." }[state];
+  return <span className={`save-state small ${state === "error" ? "t-bad" : state === "saved" ? "t-ok" : "muted"}`} role="status">{text}</span>;
+}
 const DAYS = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [7, "Sun"]];
 const TONES = [["friendly", "Friendly"], ["professional", "Professional"], ["casual", "Casual"]];
 const LIMITS = { 1: 320, 2: 260, 3: 260 };
-const PLACEHOLDERS = [["{{firstName}}", "First name"], ["{{suburb}}", "Suburb"]];
+const PLACEHOLDERS = [["{{firstName}}", "First name"], ["{{suburb}}", "Suburb"], ["{{address}}", "Address"], ["{{complex}}", "Complex"]];
 const REJECT_LABEL = {
   invalid_number: "Not a valid mobile number", duplicate: "Repeated in the file", dnc: "On Do Not Contact",
   shotgun: "Another agent messaged them recently (Shotgun list)", already_in_campaign: "Already in this campaign",
 };
-const FIELD_OPTIONS = [["", "Don’t use"], ["phone", "Mobile number"], ["first_name", "First name"], ["last_name", "Surname"], ["full_name", "Full name"], ["suburb", "Suburb"], ["email", "Email"]];
+const FIELD_OPTIONS = [["", "Don’t use"], ["phone", "Mobile number"], ["first_name", "First name"], ["last_name", "Surname"], ["full_name", "Full name"], ["suburb", "Suburb"], ["email", "Email"], ["unit", "Unit number"], ["complex", "Complex / estate"], ["street_number", "Street number"], ["street", "Street"]];
 
 export default function CampaignWizard() {
   const { id } = useParams();
@@ -40,7 +75,7 @@ export default function CampaignWizard() {
         supabase.from("profiles").select("id, full_name").eq("id", camp.agent_id).maybeSingle().then(must),
         supabase.rpc("list_whatsapp_numbers").then(must),
         supabase.from("leads").select("id", { count: "exact", head: true }).eq("campaign_id", id).then((r) => { if (r.error) throw r.error; return r.count ?? 0; }),
-        supabase.from("leads").select("contact:contacts(first_name, suburb)").eq("campaign_id", id).limit(1).then(must),
+        supabase.from("leads").select("contact:contacts(first_name, suburb, unit, complex, street_number, street)").eq("campaign_id", id).limit(200).then(must),
         supabase.from("uploads").select("*").eq("campaign_id", id).order("created_at", { ascending: false }).limit(1).then(must),
       ]);
       const byPos = Object.fromEntries((m ?? []).map((x) => [x.position, x]));
@@ -48,7 +83,11 @@ export default function CampaignWizard() {
       setCtx({
         settings, agent,
         number: (nums ?? []).find((n) => n.agent_id === camp.agent_id && n.status !== "removed") ?? null,
-        leads: leadCount, sample: sample?.[0]?.contact ?? null, upload: upload?.[0] ?? null,
+        leads: leadCount, upload: upload?.[0] ?? null,
+        // preview someone with an address if there is one, and count who has one
+        sample: (sample ?? []).map((l) => l.contact).find((c) => c && contactAddress(c)) ?? sample?.[0]?.contact ?? null,
+        withAddress: (sample ?? []).filter((l) => contactAddress(l.contact)).length, checked: (sample ?? []).length,
+        withComplex: (sample ?? []).filter((l) => l.contact?.complex).length,
       });
       setC(camp);
       if (!started.current) { started.current = true; setStep(Math.min(5, Math.max(1, camp.wizard_step))); }
@@ -131,9 +170,11 @@ function Nav({ back, next, nextLabel = "Next", disabled, children }) {
 function StepBasics({ c, editable, save, next }) {
   const [f, setF] = useState({ name: c.name, goal: c.goal ?? "valuation", audience: c.brief?.audience ?? "", offer: c.brief?.offer ?? "", tone: c.brief?.tone ?? "friendly" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const toRow = (v) => ({ name: v.name.trim() || c.name, goal: v.goal, brief: { ...c.brief, goal: v.goal, audience: v.audience.trim(), offer: v.offer.trim(), tone: v.tone } });
+  const saveState = useAutosave(f, (v) => save(toRow(v), true), editable);
   async function saveAndNext() {
     if (!f.name.trim()) return;
-    const ok = await save({ name: f.name.trim(), goal: f.goal, brief: { ...c.brief, goal: f.goal, audience: f.audience.trim(), offer: f.offer.trim(), tone: f.tone } }, true);
+    const ok = await save(toRow(f), true);
     if (ok) next();
   }
   return (
@@ -160,7 +201,7 @@ function StepBasics({ c, editable, save, next }) {
           </div>
         </div>
       </fieldset>
-      <Nav next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!f.name.trim()} />
+      <Nav next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!f.name.trim()}>{editable && <SaveState state={saveState} />}</Nav>
     </section>
   );
 }
@@ -232,9 +273,9 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
       <div className="card-head">
         <div>
           <h2>Who gets the messages?</h2>
-          <p className="muted small">Upload a CSV with at least a mobile number per row; a first name makes the messages personal. An email column is optional but helps catch people on Do Not Contact who changed their number. Numbers like 082 555 0141, 27825550141 or +27 82 555 0141 all work.</p>
+          <p className="muted small">Upload a CSV with at least a mobile number per row; a first name makes the messages personal. Optional columns: email (catches people on Do Not Contact who changed number), and the address: unit and complex for people in a complex, or street number and street for houses, so messages can mention where they live. Numbers like 082 555 0141, 27825550141 or +27 82 555 0141 all work.</p>
         </div>
-        <button className="btn btn-sm" onClick={() => downloadCsv("blue-prop-leads-template.csv", "first_name,last_name,mobile,suburb,email\r\nThandi,Mokoena,082 555 0141,Durbanville,thandi@example.com\r\nPieter,van Wyk,+27 83 555 0199,Bellville,")}>Download template</button>
+        <button className="btn btn-sm" onClick={() => downloadCsv("blue-prop-leads-template.csv", "first_name,last_name,mobile,email,unit,complex,street_number,street,suburb\r\nThandi,Mokoena,082 555 0141,thandi@example.com,12,Red Complex,,,Durbanville\r\nPieter,van Wyk,+27 83 555 0199,,,,14,Oak Street,Bellville\r\nAisha,Patel,083 555 0123,,,,,,Table View")}>Download template</button>
       </div>
 
       <div className="kpi" style={{ maxWidth: 260 }}>
@@ -309,12 +350,21 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
 
 // ---------- 3. Messages ----------
 export function fill(body, sample, agentFirst) {
+  const has = sample && (sample.first_name || sample.suburb || sample.complex || sample.street);
+  const s = has ? sample : { first_name: "Thandi", suburb: "Durbanville", unit: "12", complex: "Red Complex" };
   return (body || "")
-    .replace(/\{\{\s*firstName\s*\}\}/g, sample?.first_name || "Thandi")
-    .replace(/\{\{\s*suburb\s*\}\}/g, sample?.suburb || "Durbanville")
+    .replace(/\{\{\s*firstName\s*\}\}/g, s.first_name || "there")
+    .replace(/\{\{\s*suburb\s*\}\}/g, s.suburb || "your area")
+    .replace(/\{\{\s*address\s*\}\}/g, contactAddress(s) || ADDRESS_FALLBACK)
+    .replace(/\{\{\s*complex\s*\}\}/g, s.complex || "your complex")
+    .replace(/\{\{\s*unit\s*\}\}/g, s.unit || "")
+    .replace(/\{\{\s*streetNumber\s*\}\}/g, s.street_number || "")
+    .replace(/\{\{\s*street\s*\}\}/g, s.street || "your street")
     .replace(/\{\{\s*agentName\s*\}\}/g, agentFirst || "");
 }
-const unknownTags = (body) => (body.match(/\{\{[^}]*\}\}/g) ?? []).filter((t) => !/^\{\{\s*(firstName|suburb)\s*\}\}$/.test(t));
+const TAGS = /^\{\{\s*(firstName|suburb|address|complex|unit|streetNumber|street)\s*\}\}$/;
+const unknownTags = (body) => (body.match(/\{\{[^}]*\}\}/g) ?? []).filter((t) => !TAGS.test(t));
+const usesAddress = (body) => /\{\{\s*(address|complex|unit|streetNumber|street)\s*\}\}/.test(body || "");
 
 function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, back }) {
   const toast = useToast();
@@ -322,6 +372,7 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
   const [error, setError] = useState(null);
   const refs = [useRef(null), useRef(null), useRef(null)];
   const agentFirst = ctx.agent?.full_name?.split(" ")[0] ?? "";
+  const saveState = useAutosave(msgs, (v) => saveMessages(v), editable);
 
   const update = (i, fields) => setMsgs(msgs.map((m, j) => (j === i ? { ...m, ...fields } : m)));
   function insert(i, tag) {
@@ -335,7 +386,7 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
     if (msgs.some((m) => m.body.trim()) && !window.confirm("Replace your current messages with a new AI draft?")) return;
     setBusy("draft"); setError(null);
     try {
-      const out = await callFn("campaigns", { action: "draft_messages", brief: { ...c.brief, goal: c.goal }, agent_first_name: agentFirst });
+      const out = await callFn("campaigns", { action: "draft_messages", brief: { ...c.brief, goal: c.goal }, agent_first_name: agentFirst, has_address: ctx.withAddress > 0, has_complex: ctx.withComplex > 0 });
       const list = msgs.map((m, i) => ({ ...m, body: out.messages[i] ?? m.body }));
       setMsgs(list);
       await saveMessages(list);
@@ -368,6 +419,7 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
         <ul style={{ margin: "6px 0 0 18px" }}>
           <li>Keep it short and sound like a person, not a broadcast.</li>
           <li>Use {"{{firstName}}"} so every message is personal.</li>
+          <li>If your list has addresses, {"{{address}}"} reads naturally: “unit 12 in Red Complex” for complexes, “14 Oak Street” for houses. {"{{complex}}"} on its own gives just the complex name.</li>
           <li>Ask one easy question, e.g. “Would a quick valuation be useful?”</li>
           <li>Make the last message easy to decline: “Reply STOP and I won’t message again.”</li>
         </ul>
@@ -392,7 +444,7 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
                   )}
                 </div>
                 <textarea ref={refs[i]} className="textarea" rows={5} value={m.body} disabled={!editable} aria-label={`Message ${i + 1}`}
-                  onChange={(e) => update(i, { body: e.target.value })} onBlur={() => saveMessages()}
+                  onChange={(e) => update(i, { body: e.target.value })}
                   placeholder={i === 0 ? "Hi {{firstName}}, it’s … from Blue PROP …" : i === 1 ? "A friendly follow-up…" : "A polite last message…"} />
                 <div className="row spread small">
                   <span className="row" style={{ gap: 6 }}>
@@ -400,7 +452,12 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
                   </span>
                   <span className={len > max ? "t-bad" : "muted"}>{len}/{max}</span>
                 </div>
-                {bad.length > 0 && <div className="note note-warn small">{bad.join(", ")} won’t be filled in. Use {"{{firstName}}"} or {"{{suburb}}"}.</div>}
+                {bad.length > 0 && <div className="note note-warn small">{bad.join(", ")} won’t be filled in. Use the buttons below the message to add one that works.</div>}
+                {usesAddress(m.body) && ctx.checked > 0 && ctx.withAddress < ctx.checked && (
+                  <div className="note note-warn small">
+                    {ctx.checked - ctx.withAddress} of {ctx.checked} leads{ctx.checked >= 200 ? " checked" : ""} have no address, so they’ll see “{ADDRESS_FALLBACK}” instead. Consider a separate campaign for leads with addresses.
+                  </div>
+                )}
                 {editable && m.body.trim() && (
                   <div className="row small" style={{ gap: 6 }}>
                     <span className="muted">AI:</span>
@@ -415,7 +472,10 @@ function StepMessages({ c, ctx, msgs, setMsgs, editable, saveMessages, next, bac
         </div>
         <WhatsAppPreview msgs={msgs} sample={ctx.sample} agent={ctx.agent?.full_name} />
       </div>
-      <Nav back={back} next={next} disabled={!allFilled}>{!allFilled && <span className="muted small">Fill in all three messages to continue.</span>}</Nav>
+      <Nav back={back} next={next} disabled={!allFilled}>
+        {editable && <SaveState state={saveState} />}
+        {!allFilled && <span className="muted small" style={{ marginLeft: 10 }}>Fill in all three messages to continue.</span>}
+      </Nav>
     </section>
   );
 }
@@ -425,7 +485,7 @@ function WhatsAppPreview({ msgs, sample, agent }) {
     <div className="wa-phone" aria-label="Preview of how the messages look on WhatsApp">
       <div className="wa-head">{agent ?? "Agent"} · Blue PROP</div>
       <div className="wa-body">
-        <p className="wa-note">Preview for {sample?.first_name ?? "Thandi"}{sample?.suburb ? ` in ${sample.suburb}` : ""}</p>
+        <p className="wa-note">Preview for {sample?.first_name ?? "Thandi"}{contactAddress(sample) ? ` at ${contactAddress(sample)}` : sample?.suburb ? ` in ${sample.suburb}` : ""}</p>
         {msgs.map((m, i) => m.body.trim() ? (
           <div key={i}>
             {i > 0 && <p className="wa-note">{m.delay_days} day{m.delay_days === 1 ? "" : "s"} later, if no reply</p>}
@@ -444,6 +504,7 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
   const [s, setS] = useState({ days: c.schedule?.days ?? d.window_days ?? [1, 2, 3, 4, 5], start: c.schedule?.start ?? d.window_start ?? "07:30", end: c.schedule?.end ?? d.window_end ?? "18:00", start_date: c.schedule?.start_date ?? "" });
   const valid = s.days.length > 0 && s.start < s.end;
   const today = new Date().toISOString().slice(0, 10);
+  const saveState = useAutosave(s, (v) => (v.days.length && v.start < v.end ? save({ schedule: { ...v, timezone: d.timezone } }, true) : true), editable);
   async function saveAndNext() {
     if (!valid) return;
     if (await save({ schedule: { ...s, timezone: d.timezone } }, true)) next();
@@ -471,7 +532,7 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
       </fieldset>
       {!valid && <div className="note note-warn">{s.days.length ? "The end time must be after the start time." : "Pick at least one day."}</div>}
       <p className="small muted">Each lead gets message 1, then message 2 {msgs[1]?.delay_days} days later and message 3 {msgs[2]?.delay_days} days after that, if they haven’t replied: about {total} days from first to last message.</p>
-      <Nav back={back} next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!valid} />
+      <Nav back={back} next={editable ? saveAndNext : next} nextLabel={editable ? "Save and continue" : "Next"} disabled={!valid}>{editable && <SaveState state={saveState} />}</Nav>
     </section>
   );
 }

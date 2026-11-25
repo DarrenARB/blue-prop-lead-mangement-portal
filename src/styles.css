@@ -448,3 +448,5 @@ button.nav-section .nav-badge { margin-left: 0; height: 18px; min-width: 18px; f
 .agent-filter { display: inline-flex; align-items: center; gap: 8px; }
 .agent-filter .select { width: auto; min-width: 180px; min-height: 40px; padding: 6px 10px; font-size: 14px; }
 .list-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.save-state { white-space: nowrap; }
+.t-ok { color: var(--ok); font-weight: 500; }
