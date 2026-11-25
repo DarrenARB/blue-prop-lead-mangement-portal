@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { NUMBER_STATUS, ROLE_LABEL, ago, fmtPhone, fmtR } from "../lib/format";
-import { Badge, Icon, ICONS, Spinner } from "../components/ui";
+import { Badge, Icon, ICONS, Spinner, useToast } from "../components/ui";
+import { DATE_TYPES, bucketDates, typeLabel } from "./Dates";
+import { personName } from "./Inbox";
 
 const COMING = {
-  agent: ["Start a campaign from a 5-step wizard", "Your WhatsApp inbox, with every reply scored by AI", "Hot leads you can export to Excel for the CRM", "Follow-ups and key dates"],
-  owner: ["Dashboard for your branches", "Each agent’s numbers side by side", "Your branches’ campaigns, hot leads and follow-ups"],
-  admin: ["Company-wide dashboard", "Every campaign across all branches", "Do Not Contact list, Shotgun list and rules"],
-  superadmin: ["Email and WhatsApp alerts when a number disconnects", "Everything a Main Admin sees, plus finances"],
+  agent: ["Campaigns sending through lemlist from your own number", "Replies arriving in your inbox automatically, each scored by AI", "Email reminders for your follow-ups"],
+  owner: ["Dashboard for your branches", "Each agent’s numbers side by side", "Campaign results: sent, replied and hot leads"],
+  admin: ["Company-wide dashboard", "Campaign results across all branches", "Invite emails instead of temporary passwords"],
+  superadmin: ["Email and WhatsApp alerts when a number disconnects", "Company-wide dashboard", "Campaign results across all branches"],
 };
 
 export default function Home() {
@@ -64,6 +66,7 @@ export default function Home() {
       </div>
 
       {isFinLink && <DemoCard />}
+      {profile.role !== "superadmin" && <DueNow />}
 
       <div className="grid g3">
         {profile.role === "agent" && (
@@ -151,6 +154,75 @@ function DemoCard() {
         </div>
       </div>
       {!state.agents && <p className="small muted">Add at least one agent on People first.</p>}
+    </section>
+  );
+}
+
+// Today's and overdue follow-ups and key dates, first thing after signing in.
+// Agents see theirs; Branch Owners their agents' (read-only); Main Admins everyone's.
+function DueNow() {
+  const { profile, isAdmin } = useAuth();
+  const toast = useToast();
+  const [rows, setRows] = useState(null);
+  const load = useCallback(async () => {
+    try {
+      const [dates, people] = await Promise.all([
+        supabase.from("key_dates").select("*, contact:contacts(first_name, last_name, phone_e164, suburb)").order("due_on").limit(1000).then(must),
+        profile.role === "agent" ? Promise.resolve([]) : supabase.from("profiles").select("id, full_name").then(must),
+      ]);
+      const names = Object.fromEntries((people ?? []).map((p) => [p.id, p.full_name]));
+      const b = bucketDates((dates ?? []).map((x) => ({ ...x, agent: names[x.agent_id] ?? "" })));
+      setRows([...b.overdue, ...b.today]);
+    } catch { setRows([]); }
+  }, [profile.role]);
+  useEffect(() => { load(); }, [load]);
+
+  async function done(d) {
+    const fields = d.yearly ? { due_on: `${Number(d.when.slice(0, 4)) + 1}${d.when.slice(4)}`, snoozed_until: null } : { done_at: new Date().toISOString() };
+    const { error } = await supabase.from("key_dates").update(fields).eq("id", d.id);
+    if (error) return toast(error.message, "bad");
+    toast(d.yearly ? "Done. See you next year." : "Marked as done");
+    window.dispatchEvent(new Event("bp:counts-changed"));
+    load();
+  }
+
+  if (!rows) return null;
+  const today = new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10);
+  const late = (d) => Math.round((Date.parse(today) - Date.parse(d.when)) / 864e5);
+  const overdue = rows.filter((d) => d.when < today).length;
+  const shown = rows.slice(0, 8);
+  const mine = profile.role === "agent";
+  if (!rows.length && !mine) return null; // managers only see this when something is due
+  return (
+    <section className={`card due-card ${overdue ? "has-overdue" : ""}`} aria-labelledby="due-h">
+      <div className="due-head">
+        <h2 id="due-h">{mine ? "Your follow-ups today" : profile.role === "owner" ? "Due today across your branches" : "Due today across Blue PROP"}</h2>
+        <span className="small">
+          {overdue > 0 && <Badge tone="bad">{overdue} overdue</Badge>} {rows.length - overdue > 0 && <Badge tone="brand">{rows.length - overdue} today</Badge>}
+        </span>
+        <span style={{ flex: 1 }} />
+        <Link to="/dates" className="btn btn-sm">All dates</Link>
+      </div>
+      {rows.length === 0 ? <p className="muted small" style={{ margin: 0 }}>Nothing due today and nothing overdue. Nice work.</p> : (
+        <ul className="due-list">
+          {shown.map((d) => {
+            const n = late(d);
+            const can = isAdmin || d.agent_id === profile.id;
+            return (
+              <li key={d.id} className={n > 0 ? "late" : ""}>
+                <span className="due-when">{n > 0 ? (n === 1 ? "Yesterday" : `${n} days late`) : "Today"}</span>
+                <span className="due-what">
+                  <span className="cell-title">{d.contact ? personName(d.contact) : d.title || "—"}</span>{" "}
+                  <Badge tone={DATE_TYPES[d.type]?.tone}>{typeLabel(d)}</Badge>
+                  {(d.note || (!mine && d.agent)) && <span className="cell-sub" style={{ display: "block" }}>{[d.note, !mine ? d.agent : null].filter(Boolean).join(" · ")}</span>}
+                </span>
+                {can && <button className="btn btn-sm btn-primary" onClick={() => done(d)}>Done</button>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {rows.length > shown.length && <Link to="/dates" className="small" style={{ display: "inline-block", marginTop: 8 }}>+ {rows.length - shown.length} more on Dates</Link>}
     </section>
   );
 }
