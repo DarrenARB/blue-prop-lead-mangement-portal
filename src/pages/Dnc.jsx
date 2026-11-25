@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { fmtDateTime, fmtPhone } from "../lib/format";
 import { downloadCsv, guessField, parseCsv, readFile } from "../lib/csv";
 import { Badge, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
+import ReasonPicker, { DNC_ADD_REASONS, DNC_BULK_REASONS, DNC_REMOVE_REASONS } from "../components/ReasonPicker";
 import ContactPicker from "../components/ContactPicker";
 
 const SOURCE = { manual: "Added by hand", bulk: "Bulk upload", inbox: "From the inbox", ai_opt_out: "AI spotted an opt-out", upload: "From an upload" };
@@ -129,7 +130,8 @@ function AddDnc({ onClose, onDone }) {
         if (!phone) throw new Error("That isn’t a valid mobile number. Use a format like 082 555 0141 or +27 82 555 0141.");
         row = { phone_e164: phone, name: f.name.trim() || null };
       }
-      const { error } = await supabase.from("dnc").insert({ ...row, reason: f.reason.trim() || null, source: "manual" });
+      if (!f.reason.trim()) throw new Error("Pick a reason, or choose Other and write one.");
+      const { error } = await supabase.from("dnc").insert({ ...row, reason: f.reason.trim(), source: "manual" });
       if (error) throw new Error(error.code === "23505" ? "They’re already on the list." : error.message);
       onDone();
     } catch (err) { setError(err); setBusy(false); }
@@ -153,7 +155,7 @@ function AddDnc({ onClose, onDone }) {
             <button type="button" className="btn-link small" style={{ alignSelf: "flex-start" }} onClick={() => setManual(false)}>Search my contacts instead</button>
           </>
         )}
-        <Field label="Reason (optional)" id="dnc-reason"><input id="dnc-reason" className="input" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="e.g. Asked not to be contacted" /></Field>
+        <ReasonPicker id="dnc-reason" label="Why shouldn’t they be contacted?" reasons={DNC_ADD_REASONS} value={f.reason} onChange={(v) => setF({ ...f, reason: v })} required />
       </form>
     </Modal>
   );
@@ -192,7 +194,7 @@ function BulkDnc({ onClose, onDone }) {
         <ErrorNote error={error} />
         <input type="file" accept=".csv,text/csv,.txt" onChange={pick} className="sr-only" id="dnc-file" />
         <label htmlFor="dnc-file" className="btn" style={{ alignSelf: "flex-start" }}>{file ? `Change file (${file.name})` : "Choose a CSV file"}</label>
-        <Field label="Reason for all (optional)" id="dnc-breason"><input id="dnc-breason" className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Imported from the CRM opt-out list" /></Field>
+        <ReasonPicker id="dnc-breason" label="Reason for everyone in the file" hint="A reason column in the file wins over this." reasons={DNC_BULK_REASONS} value={reason} onChange={setReason} />
         <p className="muted small">Numbers already on the list are skipped; invalid numbers are counted and left out.</p>
       </div>
     </Modal>
@@ -214,7 +216,7 @@ function RemoveDnc({ row, onClose, onDone }) {
       footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-danger" form="dnc-rm" disabled={busy || !reason.trim()}>{busy ? "Removing…" : "Remove"}</button></>}>
       <form id="dnc-rm" className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
-        <Field label="Why are they being removed?" id="dnc-rm-reason"><input id="dnc-rm-reason" className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Asked to hear about new listings again" autoFocus /></Field>
+        <ReasonPicker id="dnc-rm-reason" label="Why are they being removed?" reasons={DNC_REMOVE_REASONS.filter((r) => row.source === "ai_opt_out" || !r.startsWith("The AI"))} value={reason} onChange={setReason} required />
       </form>
     </Modal>
   );

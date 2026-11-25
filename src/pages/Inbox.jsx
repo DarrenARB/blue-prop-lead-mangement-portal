@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { ago, fmtDateTime, fmtPhone } from "../lib/format";
 import { Badge, CopyButton, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
 import { DATE_TYPES } from "./Dates";
+import ReasonPicker, { DNC_ADD_REASONS } from "../components/ReasonPicker";
 import AgentFilter, { useAgentFilter } from "../components/AgentFilter";
 
 // The full back-and-forth with a lead. Long chats scroll inside the box (the page doesn't grow forever),
@@ -201,8 +202,10 @@ function Thread({ conv, threshold, onBack, onChanged }) {
   }
   const c = conv.contact;
 
+  const panel = useRef(null);
+  useEffect(() => { panel.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }); }, [conv.id]);
   return (
-    <div className="card thread">
+    <div className="card thread" ref={panel}>
       <div className="thread-head">
         <button className="btn btn-sm inbox-back" onClick={onBack}>← Back</button>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -222,6 +225,12 @@ function Thread({ conv, threshold, onBack, onChanged }) {
         {canAct && <button className="btn btn-sm" disabled={busy === "score"} onClick={rescore}>{busy === "score" ? "Scoring…" : conv.score == null ? "Score now" : "Re-score"}</button>}
       </div>
       {conv.opt_out && <OptOutNote conv={conv} canAct={canAct} onChanged={onChanged} />}
+      {scores.length > 1 && (
+        <details className="small score-hist"><summary className="muted">Score history</summary>
+          <ul style={{ margin: "6px 0 0 18px" }}>{scores.map((s, i) => <li key={i}>{s.score} · {s.reason} <span className="muted">({fmtDateTime(s.scored_at)})</span></li>)}</ul>
+        </details>
+      )}
+
 
       <ChatHistory msgs={msgs} />
 
@@ -231,19 +240,14 @@ function Thread({ conv, threshold, onBack, onChanged }) {
           <span className="act-title">Next step</span>
           <div className="act-row">
             {conv.hot?.active
-              ? <button className="act act-hot-on" onClick={() => setModal({ hot: false })}><Icon d={ICONS.flame} />Take out of Hot Leads</button>
-              : <button className="act act-hot" onClick={() => setModal({ hot: true })}><Icon d={ICONS.flame} />Move to Hot Leads</button>}
-            <button className="act act-date" onClick={() => setModal("date")}><Icon d={ICONS.calendar} />Set follow-up</button>
-            <button className="act act-dnc" onClick={() => setModal("dnc")}><Icon d={ICONS.block} />Do Not Contact</button>
-            <button className="act act-crm" onClick={() => notReady(toast, "Sending to the CRM")}><Icon d={ICONS.send} />Send to CRM</button>
-            <button className="act act-archive" onClick={archive}><Icon d={ICONS.archive} />Archive</button>
+              ? <button className="act act-hot-on" onClick={() => setModal({ hot: false })}><Icon d={ICONS.flame} /><span className="act-long">Take out of Hot Leads</span><span className="act-short">Not hot</span></button>
+              : <button className="act act-hot" onClick={() => setModal({ hot: true })}><Icon d={ICONS.flame} /><span className="act-long">Move to Hot Leads</span><span className="act-short">Hot lead</span></button>}
+            <button className="act act-date" onClick={() => setModal("date")}><Icon d={ICONS.calendar} /><span className="act-long">Set follow-up</span><span className="act-short">Follow-up</span></button>
+            <button className="act act-dnc" onClick={() => setModal("dnc")}><Icon d={ICONS.block} /><span className="act-long">Do Not Contact</span><span className="act-short">Don’t contact</span></button>
+            <button className="act act-crm" onClick={() => notReady(toast, "Sending to the CRM")}><Icon d={ICONS.send} /><span className="act-long">Send to CRM</span><span className="act-short">To CRM</span></button>
+            <button className="act act-archive" onClick={archive}><Icon d={ICONS.archive} /><span className="act-long">Archive</span><span className="act-short">Archive</span></button>
           </div>
         </div>
-      )}
-      {scores.length > 1 && (
-        <details className="small"><summary className="muted">Score history</summary>
-          <ul style={{ margin: "6px 0 0 18px" }}>{scores.map((s, i) => <li key={i}>{s.score} · {s.reason} <span className="muted">({fmtDateTime(s.scored_at)})</span></li>)}</ul>
-        </details>
       )}
 
       {modal?.hot !== undefined && <HotModal conv={conv} active={modal.hot} onClose={() => setModal(null)} onDone={() => { setModal(null); onChanged(); toast(modal.hot ? "Moved to Hot Leads" : "Taken out of Hot Leads"); }} />}
@@ -275,13 +279,14 @@ function HotModal({ conv, active, onClose, onDone }) {
 }
 
 function DncFromConv({ conv, onClose, onDone }) {
-  const [reason, setReason] = useState(conv.opt_out ? "Asked not to be contacted (WhatsApp reply)" : "");
+  const [reason, setReason] = useState(conv.opt_out ? DNC_ADD_REASONS[0] : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   async function submit(e) {
     e.preventDefault();
+    if (!reason.trim()) return setError(new Error("Pick a reason, or choose Other and write one."));
     setBusy(true);
-    const { error } = await supabase.from("dnc").insert({ phone_e164: conv.contact.phone_e164, name: personName(conv.contact), email: conv.contact.email ?? null, contact_id: conv.contact_id, reason: reason.trim() || null, source: "inbox", is_demo: !!conv.is_sample });
+    const { error } = await supabase.from("dnc").insert({ phone_e164: conv.contact.phone_e164, name: personName(conv.contact), email: conv.contact.email ?? null, contact_id: conv.contact_id, reason: reason.trim(), source: "inbox", is_demo: !!conv.is_sample });
     if (error) { setError(error.code === "23505" ? new Error("They’re already on Do Not Contact.") : error); setBusy(false); } else onDone();
   }
   return (
@@ -289,7 +294,7 @@ function DncFromConv({ conv, onClose, onDone }) {
       footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-danger" form="dnc-c" disabled={busy}>{busy ? "Adding…" : "Add to Do Not Contact"}</button></>}>
       <form id="dnc-c" className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
-        <Field label="Reason" id="dncc-reason"><input id="dncc-reason" className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        <ReasonPicker id="dncc-reason" label="Why shouldn’t they be contacted?" reasons={DNC_ADD_REASONS} value={reason} onChange={setReason} required />
       </form>
     </Modal>
   );
