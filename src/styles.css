@@ -190,3 +190,8 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .pw-toggle { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); width: 44px; height: 40px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); display: grid; place-items: center; }
 .pw-toggle:hover { background: var(--soft); color: var(--ink); }
 .pw-wrap .input::-ms-reveal { display: none; }
+
+/* ---------- menu alert badge ---------- */
+.nav-badge { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; font-size: 12px; font-weight: 700; display: grid; place-items: center; color: #fff; }
+.nb-bad { background: #E5484D; }
+.nb-warn { background: #D9822B; }

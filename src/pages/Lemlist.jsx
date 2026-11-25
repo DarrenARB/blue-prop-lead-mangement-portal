@@ -7,7 +7,8 @@ import { Badge, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast }
 const SLOTS_PER_USER = 5;
 
 export default function Lemlist() {
-  const { isAdmin, isFinLink } = useAuth();
+  const { isAdmin, isFinLink, canManageNumbers, profile } = useAuth();
+  const isOwnerView = !canManageNumbers;
   const toast = useToast();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -18,14 +19,15 @@ export default function Lemlist() {
 
   const load = useCallback(async () => {
     try {
-      const [conn, users, numbers, agents, events] = await Promise.all([
+      const [conn, users, numbers, agents, branches, events] = await Promise.all([
         supabase.from("lemlist_connection").select("*").maybeSingle().then(must),
         supabase.from("lemlist_users").select("*").order("name").then(must),
         supabase.rpc("list_whatsapp_numbers").then(must),
         supabase.from("profiles").select("id, full_name, role, status, branch_id").eq("role", "agent").eq("status", "active").order("full_name").then(must),
+        supabase.from("branches").select("id, name").then(must),
         supabase.from("number_events").select("*").order("at", { ascending: false }).limit(12).then(must),
       ]);
-      setData({ conn, users, numbers, agents, events });
+      setData({ conn, users, numbers, agents, branches, events });
     } catch (e) { setError(e); }
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
@@ -44,8 +46,9 @@ export default function Lemlist() {
   if (error) return <ErrorNote error={error} />;
   if (!data) return <Spinner />;
 
-  const { conn, users, numbers, agents, events } = data;
+  const { conn, users, numbers, agents, branches, events } = data;
   const agentName = (id) => agents.find((a) => a.id === id)?.full_name;
+  const agentBranch = (id) => branches.find((b) => b.id === agents.find((a) => a.id === id)?.branch_id)?.name;
   const userName = (id) => users.find((u) => u.id === id)?.name ?? id;
   const live = numbers.filter((n) => n.status !== "removed");
   const okCount = live.filter((n) => n.status === "ok").length;
@@ -56,14 +59,16 @@ export default function Lemlist() {
     <>
       <div className="page-head">
         <div>
-          <p className="eyebrow">{isAdmin ? "Main Admin" : "Support"}</p>
-          <h1>{isAdmin ? "lemlist & WhatsApp numbers" : "WhatsApp numbers"}</h1>
-          <p className="muted">Numbers are checked with lemlist every 5 minutes. Only the lemlist users connected here are brought into the portal. The portal only reads from lemlist at this stage.</p>
+          <p className="eyebrow">{isAdmin ? "Main Admin" : isOwnerView ? "Branch Owner" : "Support"}</p>
+          <h1>{isAdmin ? "lemlist & WhatsApp numbers" : isOwnerView ? "Your branches’ WhatsApp numbers" : "WhatsApp numbers"}</h1>
+          <p className="muted">{isOwnerView
+            ? "The numbers your agents send from, checked with lemlist every 5 minutes. If one drops, Fin-Link Support is alerted automatically and the agent’s campaigns can’t send until it’s fixed."
+            : "Numbers are checked with lemlist every 5 minutes. Only the lemlist users connected here are brought into the portal. The portal only reads from lemlist at this stage."}</p>
         </div>
-        <button className="btn" onClick={() => run("sync")} disabled={!!busy}><Icon d={ICONS.refresh} />{busy === "sync" ? "Syncing…" : "Sync now"}</button>
+        {!isOwnerView && <button className="btn" onClick={() => run("sync")} disabled={!!busy}><Icon d={ICONS.refresh} />{busy === "sync" ? "Syncing…" : "Sync now"}</button>}
       </div>
 
-      {needPhone.length > 0 && (
+      {!isOwnerView && needPhone.length > 0 && (
         <div className="banner" role="alert" style={{ alignItems: "center" }}>
           <Icon d={ICONS.alert} />
           <div style={{ flex: 1 }}>
@@ -84,15 +89,15 @@ export default function Lemlist() {
         </div>
       )}
 
-      <div className="grid g4" style={{ marginBottom: 18 }}>
-        <div className="kpi">
+      <div className={`grid ${isOwnerView ? "g3" : "g4"}`} style={{ marginBottom: 18 }}>
+        {!isOwnerView && <div className="kpi">
           <div className="kpi-label">lemlist connection</div>
           <div className="kpi-value" style={{ fontSize: 20 }}>
             <Badge tone={conn?.status === "ok" ? "ok" : conn?.status === "error" ? "bad" : "muted"}>{conn?.status === "ok" ? "Connected" : conn?.status === "error" ? "Error" : "Not checked"}</Badge>
           </div>
           <div className="kpi-sub">{conn?.team_name ? `Team “${conn.team_name}”` : "Run a connection test"}</div>
-        </div>
-        <div className="kpi"><div className="kpi-label">Sending normally</div><div className="kpi-value">{okCount}<span className="muted" style={{ fontSize: 16, fontWeight: 400 }}> of {live.length}</span></div><div className="kpi-sub">Last check {ago(conn?.last_sync_at)}</div></div>
+        </div>}
+        <div className="kpi"><div className="kpi-label">Sending normally</div><div className="kpi-value">{okCount}<span className="muted" style={{ fontSize: 16, fontWeight: 400 }}> of {live.length}</span></div><div className="kpi-sub">Last check {ago(live.map((n) => n.last_checked_at).sort().pop())}</div></div>
         <div className="kpi"><div className="kpi-label">Need attention</div><div className="kpi-value" style={{ color: bad.length ? "var(--bad)" : undefined }}>{bad.length}</div><div className="kpi-sub">Disconnected, linked elsewhere or unlicensed</div></div>
         <div className="kpi"><div className="kpi-label">Linked to agents</div><div className="kpi-value">{live.filter((n) => n.agent_id).length}</div><div className="kpi-sub">{live.filter((n) => !n.agent_id).length} free</div></div>
       </div>
@@ -100,7 +105,7 @@ export default function Lemlist() {
       {conn?.status === "error" && conn.last_error && <div className="note note-bad" style={{ marginBottom: 18 }}>{conn.last_error}</div>}
 
       {/* ---------- lemlist users ---------- */}
-      <section className="card">
+      {!isOwnerView && <section className="card">
         <div className="card-head">
           <div>
             <h2>lemlist users in the portal</h2>
@@ -135,19 +140,19 @@ export default function Lemlist() {
             })}
           </div>
         )}
-      </section>
+      </section>}
 
       {/* ---------- numbers ---------- */}
       <section className="card">
         <div className="card-head">
-          <div><h2>WhatsApp numbers</h2><p className="muted small">lemlist shows the WhatsApp profile name, not the number, so enter each phone number once. Numbers are encrypted in the database and only shown to admins, Support and the agent who sends from it.</p></div>
+          <div><h2>WhatsApp numbers</h2><p className="muted small">{isOwnerView ? "One number per agent. Numbers are stored encrypted." : "lemlist shows the WhatsApp profile name, not the number, so enter each phone number once. Numbers are encrypted in the database and only shown to admins, Support, the agent who sends from it and their Branch Owner."}</p></div>
         </div>
         {numbers.length === 0 ? (
-          <Empty title="No numbers yet">Connect a lemlist user, then sync.</Empty>
+          <Empty title="No numbers yet">{isOwnerView ? "None of your agents has a WhatsApp number linked yet." : "Connect a lemlist user, then sync."}</Empty>
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Number</th><th>lemlist user</th><th>Agent</th><th>Status</th><th>Checked</th><th></th></tr></thead>
+              <thead><tr><th>Number</th>{!isOwnerView && <th>lemlist user</th>}<th>Agent</th><th>Status</th><th>Checked</th>{!isOwnerView && <th></th>}</tr></thead>
               <tbody>
                 {numbers.map((n) => (
                   <tr key={n.id} className={n.status === "removed" ? "dim" : ""}>
@@ -155,18 +160,18 @@ export default function Lemlist() {
                       <div className="cell-title">{n.has_phone ? fmtPhone(n.phone_e164) : <Badge tone="bad">Phone number needed</Badge>}</div>
                       <div className="cell-sub">Profile “{n.profile_label || "—"}” · <span className="mono">{n.id}</span></div>
                     </td>
-                    <td>{userName(n.lemlist_user_id)}</td>
-                    <td>{agentName(n.agent_id) ?? <span className="muted">Not linked</span>}</td>
+                    {!isOwnerView && <td>{userName(n.lemlist_user_id)}</td>}
+                    <td>{agentName(n.agent_id) ? <><div>{agentName(n.agent_id)}</div>{agentBranch(n.agent_id) && <div className="cell-sub">{agentBranch(n.agent_id)}</div>}</> : <span className="muted">Not linked</span>}</td>
                     <td><Badge tone={NUMBER_STATUS[n.status]?.[1]}>{NUMBER_STATUS[n.status]?.[0] ?? n.status}</Badge><div className="cell-sub">since {ago(n.status_changed_at)}</div></td>
                     <td className="small muted">{ago(n.last_checked_at)}</td>
-                    <td className="num">
+                    {!isOwnerView && <td className="num">
                       <div className="row" style={{ justifyContent: "flex-end" }}>
                         {isAdmin && (n.has_phone
                           ? <button className="btn btn-sm" onClick={() => setEditNumber(n)}>Edit</button>
                           : <button className="btn btn-sm btn-primary" onClick={() => setEditNumber(n)}>Add phone number</button>)}
                         <button className="btn btn-sm" onClick={() => setReconnect(n)}>Record reconnection</button>
                       </div>
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
@@ -176,7 +181,7 @@ export default function Lemlist() {
       </section>
 
       {/* ---------- recent events ---------- */}
-      <section className="card">
+      {!isOwnerView && <section className="card">
         <h2 style={{ marginBottom: 10 }}>Recent number activity</h2>
         {events.length === 0 ? <p className="muted">No status changes or reconnections yet.</p> : (
           <div className="table-wrap">
@@ -197,7 +202,7 @@ export default function Lemlist() {
             </table>
           </div>
         )}
-      </section>
+      </section>}
 
       {isFinLink && <SupportAlerts />}
 

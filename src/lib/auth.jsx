@@ -37,7 +37,8 @@ export function AuthProvider({ children }) {
     signOut: () => supabase.auth.signOut(),
     isAdmin: !!profile && (profile.role === "admin" || profile.is_fin_link),
     isFinLink: !!profile?.is_fin_link,
-    canSeeNumbers: !!profile && (profile.role === "admin" || profile.role === "support" || profile.is_fin_link),
+    canSeeNumbers: !!profile && (profile.role === "admin" || profile.role === "support" || profile.role === "owner" || profile.is_fin_link),
+    canManageNumbers: !!profile && (profile.role === "admin" || profile.role === "support" || profile.is_fin_link),
   };
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

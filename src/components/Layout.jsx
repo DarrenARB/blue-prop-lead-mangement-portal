@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ROLE_LABEL, initials } from "../lib/format";
 import { Icon, ICONS } from "./ui";
@@ -10,10 +11,27 @@ export default function Layout() {
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
 
+  // Live count of numbers that need attention, shown as a badge on the menu so it's seen from any page.
+  const [attention, setAttention] = useState({ bad: 0, phone: 0 });
+  useEffect(() => {
+    if (!canSeeNumbers) return;
+    let alive = true;
+    const check = () => supabase.rpc("list_whatsapp_numbers").then(({ data }) => {
+      if (!alive || !data) return;
+      const live = data.filter((n) => n.status !== "removed");
+      setAttention({ bad: live.filter((n) => n.status !== "ok").length, phone: isAdmin ? live.filter((n) => !n.has_phone).length : 0 });
+    });
+    check();
+    const t = setInterval(check, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [canSeeNumbers, isAdmin, loc.pathname]);
+
   const links = [
     { to: "/", label: "Home", icon: ICONS.home, show: true },
     { to: "/team", label: "Branches & people", icon: ICONS.team, show: isAdmin },
-    { to: "/lemlist", label: isAdmin ? "lemlist & numbers" : "WhatsApp numbers", icon: ICONS.phone, show: canSeeNumbers },
+    { to: "/lemlist", label: isAdmin ? "lemlist & numbers" : "WhatsApp numbers", icon: ICONS.phone, show: canSeeNumbers,
+      badge: attention.bad || attention.phone ? { n: attention.bad + attention.phone, tone: attention.bad ? "bad" : "warn",
+        label: [attention.bad && `${attention.bad} number${attention.bad > 1 ? "s" : ""} need attention`, attention.phone && `${attention.phone} phone number${attention.phone > 1 ? "s" : ""} needed`].filter(Boolean).join(", ") } : null },
     { to: "/plan", label: "Project plan", icon: ICONS.plan, show: isAdmin },
     { to: "/audit", label: "Audit log", icon: ICONS.audit, show: isAdmin },
   ];
@@ -35,6 +53,7 @@ export default function Layout() {
         {links.filter((l) => l.show).map((l) => (
           <NavLink key={l.to} to={l.to} end={l.to === "/"} className={({ isActive }) => `nav ${isActive ? "active" : ""}`}>
             <Icon d={l.icon} />{l.label}
+            {l.badge && <span className={`nav-badge nb-${l.badge.tone}`} title={l.badge.label} aria-label={l.badge.label}>{l.badge.n}</span>}
           </NavLink>
         ))}
         <div className="side-foot">
