@@ -13,7 +13,7 @@ const COMING = {
 };
 
 export default function Home() {
-  const { profile, isAdmin, canSeeNumbers } = useAuth();
+  const { profile, isAdmin, canSeeNumbers, isFinLink } = useAuth();
   const [d, setD] = useState(null);
 
   useEffect(() => {
@@ -63,6 +63,8 @@ export default function Home() {
         </div>
       </div>
 
+      {isFinLink && <DemoCard />}
+
       <div className="grid g3">
         {profile.role === "agent" && (
           <div className="kpi">
@@ -108,5 +110,47 @@ export default function Home() {
         </ul>
       </section>
     </>
+  );
+}
+
+// Super Admins: load or remove the demo data every tester shares.
+function DemoCard() {
+  const [state, setState] = useState(null); // { loadedAt, agents }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const load = () => Promise.all([
+    supabase.from("settings").select("demo_loaded_at").eq("id", 1).maybeSingle(),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "agent").eq("status", "active"),
+  ]).then(([s, a]) => setState({ loadedAt: s.data?.demo_loaded_at ?? null, agents: a.count ?? 0 }));
+  useEffect(() => { load(); }, []);
+  async function run(fn) {
+    if (fn === "clear_demo_data" && !window.confirm("Remove all demo data for everyone? Real data isn’t touched.")) return;
+    setBusy(true); setMsg(null);
+    const { data, error } = await supabase.rpc(fn);
+    setBusy(false);
+    if (error) return setMsg({ bad: true, text: error.message });
+    window.location.reload();
+    return data;
+  }
+  if (!state) return null;
+  return (
+    <section className="card stack" style={{ marginBottom: 18 }}>
+      <div className="row spread" style={{ alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 320px" }}>
+          <h2>Demo data <span className="badge b-muted" style={{ marginLeft: 6 }}>Super Admin</span></h2>
+          <p className="muted small" style={{ marginTop: 4 }}>
+            {state.loadedAt
+              ? `Loaded ${new Date(state.loadedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}. Each agent has the same starter set: three campaigns (running, draft, ended), eight conversations with AI scores, hot leads, dates and Do Not Contact entries. Branch Owners see their agents’ sets; admins see all.`
+              : `Gives each of the ${state.agents} active agent${state.agents === 1 ? "" : "s"} the same starter set to play with: campaigns, inbox conversations with AI scores, hot leads, dates, Do Not Contact and a Shotgun clash. Everything is tagged, so one click removes it all.`}
+          </p>
+          {msg && <p className={`small ${msg.bad ? "t-bad" : ""}`}>{msg.text}</p>}
+        </div>
+        <div className="row">
+          <button className="btn btn-primary" disabled={busy || !state.agents} onClick={() => run("load_demo_data")}>{busy ? "Working…" : state.loadedAt ? "Reload demo data" : "Load demo data"}</button>
+          {state.loadedAt && <button className="btn" disabled={busy} onClick={() => run("clear_demo_data")}>Remove demo data</button>}
+        </div>
+      </div>
+      {!state.agents && <p className="small muted">Add at least one agent on People first.</p>}
+    </section>
   );
 }

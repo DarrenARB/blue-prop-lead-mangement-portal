@@ -16,7 +16,7 @@ const REJECT_LABEL = {
   invalid_number: "Not a valid mobile number", duplicate: "Repeated in the file", dnc: "On Do Not Contact",
   shotgun: "Another agent messaged them recently (Shotgun list)", already_in_campaign: "Already in this campaign",
 };
-const FIELD_OPTIONS = [["", "Don’t use"], ["phone", "Mobile number"], ["first_name", "First name"], ["last_name", "Surname"], ["full_name", "Full name"], ["suburb", "Suburb"]];
+const FIELD_OPTIONS = [["", "Don’t use"], ["phone", "Mobile number"], ["first_name", "First name"], ["last_name", "Surname"], ["full_name", "Full name"], ["suburb", "Suburb"], ["email", "Email"]];
 
 export default function CampaignWizard() {
   const { id } = useParams();
@@ -232,9 +232,9 @@ function StepLeads({ c, ctx, editable, reload, next, back }) {
       <div className="card-head">
         <div>
           <h2>Who gets the messages?</h2>
-          <p className="muted small">Upload a CSV with at least a mobile number per row; a first name makes the messages personal. Email addresses aren’t needed. Numbers like 082 555 0141, 27825550141 or +27 82 555 0141 all work.</p>
+          <p className="muted small">Upload a CSV with at least a mobile number per row; a first name makes the messages personal. An email column is optional but helps catch people on Do Not Contact who changed their number. Numbers like 082 555 0141, 27825550141 or +27 82 555 0141 all work.</p>
         </div>
-        <button className="btn btn-sm" onClick={() => downloadCsv("blue-prop-leads-template.csv", "first_name,last_name,mobile,suburb\r\nThandi,Mokoena,082 555 0141,Durbanville\r\nPieter,van Wyk,+27 83 555 0199,Bellville")}>Download template</button>
+        <button className="btn btn-sm" onClick={() => downloadCsv("blue-prop-leads-template.csv", "first_name,last_name,mobile,suburb,email\r\nThandi,Mokoena,082 555 0141,Durbanville,thandi@example.com\r\nPieter,van Wyk,+27 83 555 0199,Bellville,")}>Download template</button>
       </div>
 
       <div className="kpi" style={{ maxWidth: 260 }}>

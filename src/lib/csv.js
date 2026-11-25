@@ -30,6 +30,7 @@ export function parseCsv(text) {
 // Guess what each column holds from its header name.
 export function guessField(header) {
   const h = header.toLowerCase().replace(/[^a-z]/g, "");
+  if (/(email|emailaddress|mail)/.test(h)) return "email";
   if (/(mobile|cell|phone|whatsapp|number|tel|contact)/.test(h)) return "phone";
   if (/^(first|firstname|name|givenname|fname)$/.test(h) || h === "firstnames") return "first_name";
   if (/(last|surname|lname|familyname)/.test(h)) return "last_name";

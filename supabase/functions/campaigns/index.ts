@@ -58,7 +58,8 @@ async function audit(me: Me, type: string, summary: string, data?: unknown) {
 }
 
 // ---------- lead upload ----------
-type Row = { phone?: string; first_name?: string; last_name?: string; suburb?: string; row_no?: number };
+type Row = { phone?: string; first_name?: string; last_name?: string; suburb?: string; email?: string; row_no?: number };
+const cleanEmail = (v: unknown) => { const e = String(v ?? "").trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? e.slice(0, 160) : null; };
 
 async function processUpload(me: Me, body: any) {
   const campaign = await editableCampaign(me, String(body.campaign_id ?? ""));
@@ -74,7 +75,7 @@ async function processUpload(me: Me, body: any) {
 
   const rejections: { row_no: number; phone_raw: string | null; name: string | null; reason: string; detail?: string }[] = [];
   const seen = new Set<string>();
-  const good: { phone: string; first_name: string | null; last_name: string | null; suburb: string | null; row_no: number }[] = [];
+  const good: { phone: string; first_name: string | null; last_name: string | null; suburb: string | null; email: string | null; row_no: number }[] = [];
 
   rows.forEach((r, i) => {
     const row_no = r.row_no ?? i + 2;
@@ -83,7 +84,7 @@ async function processUpload(me: Me, body: any) {
     if (!phone) { rejections.push({ row_no, phone_raw: clean(r.phone, 40), name, reason: "invalid_number" }); return; }
     if (seen.has(phone)) { rejections.push({ row_no, phone_raw: clean(r.phone, 40), name, reason: "duplicate", detail: "Appears more than once in this file" }); return; }
     seen.add(phone);
-    good.push({ phone, first_name: clean(r.first_name, 60), last_name: clean(r.last_name, 60), suburb: clean(r.suburb, 80), row_no });
+    good.push({ phone, first_name: clean(r.first_name, 60), last_name: clean(r.last_name, 60), suburb: clean(r.suburb, 80), email: cleanEmail(r.email), row_no });
   });
 
   const phones = good.map((g) => g.phone);
@@ -93,10 +94,17 @@ async function processUpload(me: Me, body: any) {
     const { data } = await db.from("dnc").select("phone_e164").in("phone_e164", part);
     for (const d of data ?? []) dnc.add(d.phone_e164);
   }
+  // returning leads can come back with a new number but the same email
+  const dncEmail = new Set<string>();
+  const emails = [...new Set(good.map((g) => g.email).filter(Boolean))] as string[];
+  for (const part of chunk(emails, 300)) {
+    const { data } = await db.from("dnc").select("email").in("email", part);
+    for (const d of data ?? []) if (d.email) dncEmail.add(d.email);
+  }
   // existing contacts
   const contactByPhone = new Map<string, any>();
   for (const part of chunk(phones, 500)) {
-    const { data } = await db.from("contacts").select("id, phone_e164, first_name, last_name, suburb").in("phone_e164", part);
+    const { data } = await db.from("contacts").select("id, phone_e164, first_name, last_name, suburb, email").in("phone_e164", part);
     for (const c of data ?? []) contactByPhone.set(c.phone_e164, c);
   }
   const existingIds = [...contactByPhone.values()].map((c) => c.id);
@@ -126,6 +134,7 @@ async function processUpload(me: Me, body: any) {
     const existing = contactByPhone.get(g.phone);
     const name = [g.first_name, g.last_name].filter(Boolean).join(" ") || null;
     if (dnc.has(g.phone)) { rejections.push({ row_no: g.row_no, phone_raw: g.phone, name, reason: "dnc", detail: "On the Do Not Contact list" }); continue; }
+    if (g.email && dncEmail.has(g.email)) { rejections.push({ row_no: g.row_no, phone_raw: g.phone, name, reason: "dnc", detail: `On the Do Not Contact list (email ${g.email})` }); continue; }
     if (existing && inCampaign.has(existing.id)) { rejections.push({ row_no: g.row_no, phone_raw: g.phone, name, reason: "already_in_campaign" }); continue; }
     const h = existing ? held.get(existing.id) : undefined;
     if (h) {
@@ -138,7 +147,7 @@ async function processUpload(me: Me, body: any) {
   }
 
   // create new contacts, fill blanks on existing ones
-  const newContacts = toAdd.filter((g) => !contactByPhone.has(g.phone)).map((g) => ({ phone_e164: g.phone, first_name: g.first_name, last_name: g.last_name, suburb: g.suburb }));
+  const newContacts = toAdd.filter((g) => !contactByPhone.has(g.phone)).map((g) => ({ phone_e164: g.phone, first_name: g.first_name, last_name: g.last_name, suburb: g.suburb, email: g.email }));
   for (const part of chunk(newContacts, 500)) {
     const { data, error } = await db.from("contacts").upsert(part, { onConflict: "phone_e164" }).select("id, phone_e164");
     if (error) throw new HttpError(500, error.message);
@@ -146,8 +155,8 @@ async function processUpload(me: Me, body: any) {
   }
   for (const g of toAdd) {
     const c = contactByPhone.get(g.phone);
-    if (c && (!c.first_name && g.first_name || !c.suburb && g.suburb)) {
-      await db.from("contacts").update({ first_name: c.first_name ?? g.first_name, last_name: c.last_name ?? g.last_name, suburb: c.suburb ?? g.suburb }).eq("id", c.id);
+    if (c && (!c.first_name && g.first_name || !c.suburb && g.suburb || !c.email && g.email)) {
+      await db.from("contacts").update({ first_name: c.first_name ?? g.first_name, last_name: c.last_name ?? g.last_name, suburb: c.suburb ?? g.suburb, email: c.email ?? g.email }).eq("id", c.id);
     }
   }
 
@@ -288,7 +297,9 @@ const SCORE_SYSTEM = `You score WhatsApp conversations between an estate agent a
 Score how interested the lead is in doing business now, 0-100:
 90-100 asks for a valuation/viewing/call or gives times; 70-89 clearly interested, asks questions; 40-69 lukewarm or "maybe later";
 10-39 not now but polite; 0-9 hostile or asks to stop.
-opt_out is true if the lead asks not to be messaged again in any language (e.g. "stop", "remove me", "moenie my weer kontak nie", "ungangithumeleli").
+opt_out is true when the lead makes clear they don't want to be contacted, in any language: "stop", "remove me", "unsubscribe",
+"not interested" / "no thanks, not interested", "wrong number", "don't message me", "moenie my weer kontak nie", "nie belangstel nie",
+"ungangithumeleli", or an angry reply about being messaged. A soft "not right now" / "maybe later" / "not yet" is NOT an opt-out.
 Return only JSON: {"score": number, "reason": "max 20 words, plain English", "opt_out": boolean}`;
 
 async function scoreConversation(me: Me, body: any) {
@@ -315,9 +326,12 @@ async function scoreConversation(me: Me, body: any) {
     if (hot) await db.from("hot_leads").update({ active, updated_at: now }).eq("id", hot.id);
     else if (active) await db.from("hot_leads").insert({ conversation_id: cv.id, contact_id: cv.contact_id, agent_id: cv.agent_id, campaign_id: cv.campaign_id, source: "ai", active: true });
   }
-  if (optOut && !cv.is_sample) {
-    const { data: c } = await db.from("contacts").select("phone_e164, first_name, last_name").eq("id", cv.contact_id).single();
-    if (c) await db.from("dnc").upsert({ phone_e164: c.phone_e164, name: [c.first_name, c.last_name].filter(Boolean).join(" ") || null, reason: reason ?? "Asked not to be contacted", source: "ai_opt_out", needs_review: true, added_by_name: "AI (opt-out spotted)" }, { onConflict: "phone_e164", ignoreDuplicates: true });
+  if (optOut) { // demo conversations use +27 00 numbers, which are cleared with the demo data
+    const { data: c } = await db.from("contacts").select("phone_e164, first_name, last_name, email").eq("id", cv.contact_id).single();
+    // if a person already overruled the AI for this number, don't put them back on the list
+    const { data: overruled } = c ? await db.from("audit_log").select("id").eq("type", "dnc").like("summary", "Removed%").eq("data->>phone_e164", c.phone_e164).limit(1) : { data: [] };
+    if (c && !(overruled ?? []).length) await db.from("dnc").upsert({ phone_e164: c.phone_e164, name: [c.first_name, c.last_name].filter(Boolean).join(" ") || null, email: c.email ?? null, contact_id: cv.contact_id, reason: reason ?? "Asked not to be contacted", source: "ai_opt_out", needs_review: true, added_by_name: "AI (not interested / asked to stop)" }, { onConflict: "phone_e164", ignoreDuplicates: true });
+    if ((overruled ?? []).length) await db.from("conversations").update({ opt_out: false }).eq("id", cv.id);
   }
   return { score, reason, opt_out: optOut, hot: score >= threshold && !optOut, threshold };
 }

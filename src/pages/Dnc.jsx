@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { fmtDateTime, fmtPhone } from "../lib/format";
 import { downloadCsv, guessField, parseCsv, readFile } from "../lib/csv";
 import { Badge, Empty, ErrorNote, Field, Icon, ICONS, Modal, Spinner, useToast } from "../components/ui";
+import ContactPicker from "../components/ContactPicker";
 
 const SOURCE = { manual: "Added by hand", bulk: "Bulk upload", inbox: "From the inbox", ai_opt_out: "AI spotted an opt-out", upload: "From an upload" };
 
@@ -26,6 +27,13 @@ export default function Dnc() {
   const [error, setError] = useState(null);
   const [q, setQ] = useState("");
   const [modal, setModal] = useState(null); // 'add' | 'bulk' | {remove: row}
+  const [onlyReview, setOnlyReview] = useState(false);
+  const mayRemove = (r) => canBulk || r.source === "ai_opt_out" || r.added_by === profile.id; // the server makes the final check
+  async function confirmAi(r) {
+    const { error } = await supabase.rpc("confirm_dnc", { p_id: r.id });
+    if (error) return toast(error.message, "bad");
+    toast("Kept on Do Not Contact"); load();
+  }
 
   const load = useCallback(() => {
     supabase.from("dnc").select("*").order("created_at", { ascending: false }).then(must).then(setRows).catch(setError);
@@ -34,10 +42,10 @@ export default function Dnc() {
 
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return rows ?? [];
+    if (!t) return (rows ?? []).filter((r) => !onlyReview || r.needs_review);
     const digits = t.replace(/\D/g, "");
-    return (rows ?? []).filter((r) => (r.name ?? "").toLowerCase().includes(t) || (digits.length >= 3 && r.phone_e164.replace(/\D/g, "").includes(digits.replace(/^0/, ""))));
-  }, [rows, q]);
+    return (rows ?? []).filter((r) => !onlyReview || r.needs_review).filter((r) => (r.name ?? "").toLowerCase().includes(t) || (r.email ?? "").toLowerCase().includes(t) || (digits.length >= 3 && r.phone_e164.replace(/\D/g, "").includes(digits.replace(/^0/, ""))));
+  }, [rows, q, onlyReview]);
   const review = (rows ?? []).filter((r) => r.needs_review).length;
 
   function exportCsv() {
@@ -51,7 +59,7 @@ export default function Dnc() {
         <div>
           <p className="eyebrow">Company-wide</p>
           <h1>Do Not Contact</h1>
-          <p className="muted">Nobody on this list is ever messaged, by any agent. Uploads are checked against it automatically. Only Branch Owners and admins can take someone off, and a reason is always logged.</p>
+          <p className="muted">Nobody on this list is ever messaged, by any agent. Uploads are checked against it by number and email, and anyone added is stopped in campaigns that haven’t sent to them yet. The AI adds people who reply “not interested” or “stop”; agents can undo the AI’s choice for their own contacts, and Branch Owners and admins can remove anyone. A reason is always logged.</p>
         </div>
         <div className="row">
           {isAdmin && rows?.length > 0 && <button className="btn" onClick={exportCsv}>Export</button>}
@@ -59,7 +67,12 @@ export default function Dnc() {
           <button className="btn btn-primary" onClick={() => setModal("add")}><Icon d={ICONS.plus} />Add number</button>
         </div>
       </div>
-      {review > 0 && <div className="note note-warn">{review} number{review > 1 ? "s were" : " was"} added automatically and should be checked.</div>}
+      {review > 0 && (
+        <div className="note note-warn row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <span><strong>{review} added by the AI</strong> from replies like “not interested” or “stop”. Check {review > 1 ? "them" : "it"}: keep {review > 1 ? "them" : "it"}, or undo if the AI got it wrong.</span>
+          <button className="btn btn-sm" onClick={() => setOnlyReview(!onlyReview)}>{onlyReview ? "Show everyone" : "Show only these"}</button>
+        </div>
+      )}
       <div className="filters">
         <input className="input" type="search" placeholder="Search by name or number" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search Do Not Contact" style={{ maxWidth: 320 }} />
         <span className="muted small">{rows ? `${shown.length.toLocaleString("en-ZA")} of ${rows.length.toLocaleString("en-ZA")}` : ""}</span>
@@ -70,14 +83,19 @@ export default function Dnc() {
       ) : rows && (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Number</th><th>Reason</th><th>Added</th>{canBulk && <th></th>}</tr></thead>
+            <thead><tr><th>Person</th><th>Reason</th><th>Added</th><th></th></tr></thead>
             <tbody>
               {shown.slice(0, 500).map((r) => (
                 <tr key={r.id}>
-                  <td><div className="cell-title mono">{fmtPhone(r.phone_e164)}</div>{r.name && <div className="cell-sub">{r.name}</div>}</td>
-                  <td>{r.reason || <span className="muted">—</span>} {r.needs_review && <Badge tone="warn">Check</Badge>}<div className="cell-sub">{SOURCE[r.source] ?? r.source}</div></td>
+                  <td>{r.name ? <div className="cell-title">{r.name}</div> : null}<div className={r.name ? "cell-sub mono" : "cell-title mono"}>{fmtPhone(r.phone_e164)}</div>{r.email && <div className="cell-sub">{r.email}</div>}</td>
+                  <td>{r.reason || <span className="muted">—</span>} {r.needs_review && <Badge tone="warn">Needs a check</Badge>}<div className="cell-sub">{SOURCE[r.source] ?? r.source}</div></td>
                   <td className="small">{fmtDateTime(r.created_at)}<div className="cell-sub">{r.added_by_name ?? "System"}</div></td>
-                  {canBulk && <td className="num"><button className="btn btn-sm" onClick={() => setModal({ remove: r })}>Remove</button></td>}
+                  <td className="num">
+                    <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                      {r.needs_review && mayRemove(r) && <button className="btn btn-sm" onClick={() => confirmAi(r)}>Keep</button>}
+                      {mayRemove(r) && <button className="btn btn-sm" onClick={() => setModal({ remove: r })}>{r.source === "ai_opt_out" ? "Undo" : "Remove"}</button>}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -93,6 +111,8 @@ export default function Dnc() {
 }
 
 function AddDnc({ onClose, onDone }) {
+  const [person, setPerson] = useState(null);
+  const [manual, setManual] = useState(false);
   const [f, setF] = useState({ phone: "", name: "", reason: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -100,20 +120,39 @@ function AddDnc({ onClose, onDone }) {
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      const phone = normalisePhone(f.phone);
-      if (!phone) throw new Error("That isn’t a valid mobile number. Use a format like 082 555 0141 or +27 82 555 0141.");
-      const { error } = await supabase.from("dnc").insert({ phone_e164: phone, name: f.name.trim() || null, reason: f.reason.trim() || null, source: "manual" });
-      if (error) throw new Error(error.code === "23505" ? "That number is already on the list." : error.message);
+      let row;
+      if (person) {
+        row = { phone_e164: person.phone_e164, name: [person.first_name, person.last_name].filter(Boolean).join(" ") || null, email: person.email ?? null, contact_id: person.id };
+      } else {
+        if (!manual) throw new Error("Pick the person, or choose “enter a number by hand”.");
+        const phone = normalisePhone(f.phone);
+        if (!phone) throw new Error("That isn’t a valid mobile number. Use a format like 082 555 0141 or +27 82 555 0141.");
+        row = { phone_e164: phone, name: f.name.trim() || null };
+      }
+      const { error } = await supabase.from("dnc").insert({ ...row, reason: f.reason.trim() || null, source: "manual" });
+      if (error) throw new Error(error.code === "23505" ? "They’re already on the list." : error.message);
       onDone();
     } catch (err) { setError(err); setBusy(false); }
   }
   return (
-    <Modal title="Add to Do Not Contact" onClose={onClose}
+    <Modal title="Add to Do Not Contact" sub="They won’t be messaged again by anyone, and they’re stopped in any campaign that hasn’t sent to them yet." onClose={onClose}
       footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" form="dnc-add" disabled={busy}>{busy ? "Adding…" : "Add"}</button></>}>
       <form id="dnc-add" className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
-        <Field label="Mobile number" id="dnc-phone"><input id="dnc-phone" className="input" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="082 555 0141" autoFocus /></Field>
-        <Field label="Name (optional)" id="dnc-name"><input id="dnc-name" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+        {!manual ? (
+          <>
+            <Field label="Who?" id="dnc-pick" hint="Search the people you’re talking to by name, number, email or suburb.">
+              <ContactPicker id="dnc-pick" value={person} onChange={setPerson} autoFocus />
+            </Field>
+            {!person && <button type="button" className="btn-link small" style={{ alignSelf: "flex-start" }} onClick={() => setManual(true)}>Not in the list? Enter a number by hand</button>}
+          </>
+        ) : (
+          <>
+            <Field label="Mobile number" id="dnc-phone"><input id="dnc-phone" className="input" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="082 555 0141" autoFocus /></Field>
+            <Field label="Name (optional)" id="dnc-name"><input id="dnc-name" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+            <button type="button" className="btn-link small" style={{ alignSelf: "flex-start" }} onClick={() => setManual(false)}>Search my contacts instead</button>
+          </>
+        )}
         <Field label="Reason (optional)" id="dnc-reason"><input id="dnc-reason" className="input" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="e.g. Asked not to be contacted" /></Field>
       </form>
     </Modal>
@@ -161,7 +200,7 @@ function BulkDnc({ onClose, onDone }) {
 }
 
 function RemoveDnc({ row, onClose, onDone }) {
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(row.source === "ai_opt_out" ? "The AI got it wrong: they didn’t ask to stop" : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   async function submit(e) {
@@ -171,7 +210,7 @@ function RemoveDnc({ row, onClose, onDone }) {
     if (error) { setError(error); setBusy(false); } else onDone();
   }
   return (
-    <Modal title={`Remove ${row.name || fmtPhone(row.phone_e164)}?`} sub="They could then be messaged again. This is logged with your name and reason." onClose={onClose}
+    <Modal title={row.source === "ai_opt_out" ? `Undo the AI for ${row.name || fmtPhone(row.phone_e164)}?` : `Remove ${row.name || fmtPhone(row.phone_e164)}?`} sub="They could then be messaged again. This is logged with your name and reason." onClose={onClose}
       footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-danger" form="dnc-rm" disabled={busy || !reason.trim()}>{busy ? "Removing…" : "Remove"}</button></>}>
       <form id="dnc-rm" className="stack" onSubmit={submit}>
         <ErrorNote error={error} />

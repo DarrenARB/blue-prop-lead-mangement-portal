@@ -23,7 +23,7 @@ export default function Inbox() {
   const load = useCallback(async () => {
     try {
       const [c, hot, people, settings] = await Promise.all([
-        supabase.from("conversations").select("*, contact:contacts(first_name, last_name, phone_e164, suburb), campaign:campaigns(name)").eq("archived", false).order("last_message_at", { ascending: false, nullsFirst: false }).limit(500).then(must),
+        supabase.from("conversations").select("*, contact:contacts(first_name, last_name, phone_e164, suburb, email), campaign:campaigns(name)").eq("archived", false).order("last_message_at", { ascending: false, nullsFirst: false }).limit(500).then(must),
         supabase.from("hot_leads").select("conversation_id, active, source").then(must),
         supabase.from("profiles").select("id, full_name").then(must),
         supabase.from("settings").select("hot_threshold").eq("id", 1).single().then(must),
@@ -52,13 +52,13 @@ export default function Inbox() {
 
   async function samples(load_) {
     setBusy("samples");
-    const { error } = await supabase.rpc(load_ ? "load_inbox_samples" : "clear_inbox_samples");
+    const { error } = await supabase.rpc(load_ ? "load_demo_data" : "clear_demo_data");
     setBusy("");
     if (error) {
       if (/could not find the function|does not exist/i.test(error.message)) return notReady(toast, "Sample data");
       return toast(error.message, "bad");
     }
-    toast(load_ ? "Sample conversations loaded" : "Sample conversations cleared");
+    toast(load_ ? "Demo data loaded" : "Demo data removed");
     window.dispatchEvent(new Event("bp:counts-changed"));
     setOpenId(null); load();
   }
@@ -72,14 +72,11 @@ export default function Inbox() {
           <p className="muted">Every reply to a portal campaign, scored by AI. This is read-only: reply from WhatsApp on your phone.</p>
         </div>
         <div className="row">
-          {isFinLink && (hasSamples
-            ? <button className="btn" disabled={busy === "samples"} onClick={() => samples(false)}>Clear sample conversations</button>
-            : <button className="btn" disabled={busy === "samples"} onClick={() => samples(true)}>Load sample conversations</button>)}
+          {isFinLink && !hasSamples && <button className="btn" disabled={busy === "samples"} onClick={() => samples(true)}>Load demo data</button>}
           <button className="btn" onClick={() => notReady(toast, "Syncing replies from lemlist")}>Check for new replies</button>
         </div>
       </div>
 
-      {hasSamples && <div className="note note-info">Showing <strong>sample conversations</strong> (fake numbers, nothing was sent). Clear them before going live.</div>}
 
       <div className="tabs" role="tablist" aria-label="Filter conversations">
         {[["all", "All", convs?.length ?? 0], ["unread", "Unread", count("unread")], ["hot", "Hot", count("hot")], ["unscored", "Not scored", count("unscored")]].map(([k, l, n]) => (
@@ -89,7 +86,7 @@ export default function Inbox() {
       <ErrorNote error={error} />
 
       {!convs && !error ? <Spinner /> : convs && convs.length === 0 ? (
-        <div className="card"><Empty title="No replies yet">Replies to your campaigns appear here within a minute of arriving, each with an AI score. Campaigns can’t launch yet, so this stays empty for now.{isFinLink ? " Load the sample conversations to preview it." : ""}</Empty></div>
+        <div className="card"><Empty title="No replies yet">Replies to your campaigns appear here within a minute of arriving, each with an AI score. Campaigns can’t launch yet, so this stays empty for now.{isFinLink ? " Load the demo data to try it out." : ""}</Empty></div>
       ) : convs && (
         <div className={`inbox ${open ? "has-open" : ""}`}>
           <div className="inbox-list card">
@@ -160,7 +157,7 @@ function Thread({ conv, threshold, onBack, onChanged }) {
       <div className="thread-head">
         <button className="btn btn-sm inbox-back" onClick={onBack}>← Back</button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0 }}>{personName(c)} {conv.is_sample && <Badge>Sample</Badge>}</h2>
+          <h2 style={{ margin: 0 }}>{personName(c)} {conv.is_sample && <Badge>Demo</Badge>}</h2>
           <div className="cell-sub">{c?.phone_e164 ? fmtPhone(c.phone_e164) : ""}{c?.suburb ? ` · ${c.suburb}` : ""}{conv.campaign?.name ? ` · ${conv.campaign.name}` : ""}</div>
         </div>
         {c?.phone_e164 && <CopyButton text={c.phone_e164} label="Copy number" />}
@@ -175,7 +172,7 @@ function Thread({ conv, threshold, onBack, onChanged }) {
         </div>
         {canAct && <button className="btn btn-sm" disabled={busy === "score"} onClick={rescore}>{busy === "score" ? "Scoring…" : conv.score == null ? "Score now" : "Re-score"}</button>}
       </div>
-      {conv.opt_out && <div className="note note-bad small">The AI thinks this person asked not to be contacted. Check Do Not Contact.</div>}
+      {conv.opt_out && <OptOutNote conv={conv} canAct={canAct} onChanged={onChanged} />}
 
       <div className="wa-thread" aria-label="Messages">
         {!msgs ? <Spinner /> : msgs.length === 0 ? <p className="muted small">No messages stored yet.</p> : msgs.map((m) => (
@@ -242,13 +239,12 @@ function DncFromConv({ conv, onClose, onDone }) {
   const [error, setError] = useState(null);
   async function submit(e) {
     e.preventDefault();
-    if (conv.is_sample) { setError(new Error("This is a sample conversation, so it isn’t added to the real Do Not Contact list.")); return; }
     setBusy(true);
-    const { error } = await supabase.from("dnc").insert({ phone_e164: conv.contact.phone_e164, name: personName(conv.contact), reason: reason.trim() || null, source: "inbox" });
+    const { error } = await supabase.from("dnc").insert({ phone_e164: conv.contact.phone_e164, name: personName(conv.contact), email: conv.contact.email ?? null, contact_id: conv.contact_id, reason: reason.trim() || null, source: "inbox", is_demo: !!conv.is_sample });
     if (error) { setError(error.code === "23505" ? new Error("They’re already on Do Not Contact.") : error); setBusy(false); } else onDone();
   }
   return (
-    <Modal title={`Add ${personName(conv.contact)} to Do Not Contact?`} sub="Nobody at Blue PROP will message them again through the portal. Stopping them in running lemlist campaigns is switched on with launching." onClose={onClose}
+    <Modal title={`Add ${personName(conv.contact)} to Do Not Contact?`} sub="Nobody at Blue PROP will message them again, and they’re stopped in any campaign that hasn’t sent to them yet." onClose={onClose}
       footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-danger" form="dnc-c" disabled={busy}>{busy ? "Adding…" : "Add to Do Not Contact"}</button></>}>
       <form id="dnc-c" className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
@@ -297,5 +293,42 @@ export function DateModal({ conv, initial, onClose, onDone }) {
         <p className="muted small">It shows on Dates and Home when it’s due. Email reminders are switched on in a later stage.</p>
       </form>
     </Modal>
+  );
+}
+
+// The AI flagged this reply as "don't contact me". Agents can keep it or undo it if the AI got it wrong.
+function OptOutNote({ conv, canAct, onChanged }) {
+  const toast = useToast();
+  const [entry, setEntry] = useState(undefined);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    supabase.from("dnc").select("id, source, needs_review, reason").eq("phone_e164", conv.contact.phone_e164).maybeSingle().then(({ data }) => setEntry(data ?? null));
+  }, [conv.contact.phone_e164]);
+  async function undo() {
+    setBusy(true);
+    const { error } = entry
+      ? await supabase.rpc("remove_dnc", { p_id: entry.id, p_reason: "The AI got it wrong: they didn’t ask to stop" })
+      : await supabase.from("conversations").update({ opt_out: false }).eq("id", conv.id); // not on the list: just clear the flag
+    setBusy(false);
+    if (error) return toast(error.message, "bad");
+    toast(`${personName(conv.contact)} can be contacted again`); onChanged();
+  }
+  async function keep() {
+    setBusy(true);
+    const { error } = await supabase.rpc("confirm_dnc", { p_id: entry.id });
+    setBusy(false);
+    if (error) return toast(error.message, "bad");
+    toast("Kept on Do Not Contact"); setEntry({ ...entry, needs_review: false });
+  }
+  return (
+    <div className="note note-bad small optout-note">
+      <span>
+        <strong>{entry ? "On Do Not Contact" : "The AI thinks they asked not to be contacted"}</strong>
+        {entry?.source === "ai_opt_out" ? " · added by the AI from this reply" : ""}{conv.score_reason ? `: ${conv.score_reason}` : ""}
+        {entry?.needs_review ? " Please check it." : ""}
+      </span>
+      {canAct && entry?.needs_review && <button className="btn btn-sm" disabled={busy} onClick={keep}>Keep</button>}
+      {canAct && (entry === null || entry?.source === "ai_opt_out") && <button className="btn btn-sm" disabled={busy} onClick={undo}>Undo: they can be contacted</button>}
+    </div>
   );
 }

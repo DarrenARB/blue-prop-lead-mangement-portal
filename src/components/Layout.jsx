@@ -46,11 +46,13 @@ export default function Layout() {
   const [unread, setUnread] = useState(0);
   const [due, setDue] = useState(0);
   const [pwHelp, setPwHelp] = useState(0);
+  const [demoOn, setDemoOn] = useState(false);
   useEffect(() => {
     let alive = true;
     const refresh = () => {
       const today = new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10);
       supabase.from("conversations").select("id", { count: "exact", head: true }).eq("unread", true).eq("archived", false).then(({ count }) => alive && setUnread(count ?? 0));
+      supabase.from("settings").select("demo_loaded_at").eq("id", 1).maybeSingle().then(({ data }) => alive && setDemoOn(!!data?.demo_loaded_at));
       if (isAdmin) supabase.from("password_help_requests").select("id", { count: "exact", head: true }).is("resolved_at", null).then(({ count }) => alive && setPwHelp(count ?? 0));
       if (profile.role !== "owner") supabase.from("key_dates").select("id", { count: "exact", head: true }).is("done_at", null).eq("yearly", false).eq("agent_id", profile.id).lte("due_on", today).then(({ count }) => alive && setDue(count ?? 0));
     };
@@ -137,7 +139,30 @@ export default function Layout() {
         </div>
       </aside>
       {open && <div className="modal-back" style={{ zIndex: 35, background: "rgba(12,15,36,.35)" }} onClick={() => setOpen(false)} />}
-      <main className="main"><Outlet /></main>
+      <main className="main">
+        {demoOn && <DemoBanner superAdmin={isFinLink} />}
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
+// Shown to everyone while demo data is loaded, so testers know what's made up.
+function DemoBanner({ superAdmin }) {
+  const [busy, setBusy] = useState(false);
+  async function clear() {
+    if (!window.confirm("Remove all demo data for everyone? Anything testers did with demo contacts goes with it. Real data isn’t touched.")) return;
+    setBusy(true);
+    const { error } = await supabase.rpc("clear_demo_data");
+    setBusy(false);
+    if (error) return window.alert(error.message);
+    window.location.reload();
+  }
+  return (
+    <div className="demo-banner" role="status">
+      <span className="demo-pill">Demo</span>
+      <span><strong>Demo data is loaded.</strong> Items marked [Demo] and numbers starting +27 00 are made up so you can try things out. Nothing is sent to anyone.</span>
+      {superAdmin && <button className="btn btn-sm" disabled={busy} onClick={clear}>{busy ? "Removing…" : "Remove demo data"}</button>}
     </div>
   );
 }

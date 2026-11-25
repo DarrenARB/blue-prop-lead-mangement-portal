@@ -98,7 +98,7 @@ export default function HotLeads() {
                 <tr key={r.id}>
                   <td><input type="checkbox" aria-label={`Select ${personName(r.contact)}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
                   <td>
-                    <Link to="/inbox" className="cell-title">{personName(r.contact)}</Link> {r.conversation?.is_sample && <Badge>Sample</Badge>}
+                    <Link to="/inbox" className="cell-title">{personName(r.contact)}</Link> {r.conversation?.is_sample && <Badge>Demo</Badge>}
                     <div className="cell-sub mono">{r.contact ? fmtPhone(r.contact.phone_e164) : ""}{r.contact?.suburb ? ` · ${r.contact.suburb}` : ""}</div>
                     <div className="cell-sub">{r.campaign?.name ?? ""}</div>
                   </td>
