@@ -28,15 +28,16 @@ export default function Dnc() {
   const [error, setError] = useState(null);
   const [q, setQ] = useState("");
   const [modal, setModal] = useState(null); // 'add' | 'bulk' | {remove: row}
-  const mayRemove = (r) => canBulk || r.source === "ai_opt_out" || r.added_by === profile.id; // the server makes the final check
+  // the server says per row who may keep or undo it (can_change), so buttons never appear where they'd be refused
+  const mayChange = (r) => r.can_change === true;
   async function confirmAi(r) {
     const { error } = await supabase.rpc("confirm_dnc", { p_id: r.id });
     if (error) return toast(error.message, "bad");
-    toast("Kept on Do Not Contact"); load();
+    toast(`${r.name || "They"} stay on Do Not Contact. Checked, so it won’t be asked again.`); load();
   }
 
   const load = useCallback(() => {
-    supabase.from("dnc").select("*").order("created_at", { ascending: false }).then(must).then(setRows).catch(setError);
+    supabase.from("dnc").select("*, can_change").order("created_at", { ascending: false }).then(must).then(setRows).catch(setError);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -88,12 +89,13 @@ export default function Dnc() {
                 {i === firstChecked && firstChecked > 0 && <tr className="group-row"><td colSpan={4}>On the list, newest first</td></tr>}
                 <tr className={r.needs_review ? "row-review" : ""}>
                   <td>{r.name ? <div className="cell-title">{r.name}</div> : null}<div className={r.name ? "cell-sub mono" : "cell-title mono"}>{fmtPhone(r.phone_e164)}</div>{r.email && <div className="cell-sub">{r.email}</div>}</td>
-                  <td>{r.reason || <span className="muted">—</span>} {r.needs_review && <Badge tone="warn">Needs a check</Badge>}<div className="cell-sub">{SOURCE[r.source] ?? r.source}</div></td>
+                  <td>{r.reason || <span className="muted">—</span>} {r.needs_review ? <Badge tone="warn">Needs a check</Badge> : r.source === "ai_opt_out" && r.reviewed_at ? <Badge tone="ok">Checked</Badge> : null}<div className="cell-sub">{SOURCE[r.source] ?? r.source}</div></td>
                   <td className="small">{fmtDateTime(r.created_at)}<div className="cell-sub">{r.added_by_name ?? "System"}</div></td>
                   <td className="num">
                     <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
-                      {r.needs_review && mayRemove(r) && <button className="btn btn-sm btn-primary" onClick={() => confirmAi(r)}>Keep</button>}
-                      {mayRemove(r) && <button className="btn btn-sm" onClick={() => setModal({ remove: r })}>{r.source === "ai_opt_out" ? "Undo" : "Remove"}</button>}
+                      {r.needs_review && mayChange(r) && <button className="btn btn-sm btn-primary" onClick={() => confirmAi(r)}>Keep</button>}
+                      {mayChange(r) && <button className="btn btn-sm" onClick={() => setModal({ remove: r })} title="Only for mistakes: they’ll be treated as a normal lead again">Undo</button>}
+                      {r.needs_review && !mayChange(r) && <span className="small muted">Their agent checks this</span>}
                     </div>
                   </td>
                 </tr>
@@ -106,7 +108,7 @@ export default function Dnc() {
       )}
       {modal === "add" && <AddDnc onClose={() => setModal(null)} onDone={() => { setModal(null); load(); toast("Added to Do Not Contact"); }} />}
       {modal === "bulk" && <BulkDnc onClose={() => setModal(null)} onDone={(o) => { setModal(null); load(); toast(`${o.added} added · ${o.already} already listed · ${o.invalid} invalid`); }} />}
-      {modal?.remove && <RemoveDnc row={modal.remove} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); toast("Removed from Do Not Contact"); }} />}
+      {modal?.remove && <RemoveDnc row={modal.remove} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); toast("Undone. They’re no longer on Do Not Contact."); }} />}
     </>
   );
 }
@@ -212,11 +214,11 @@ function RemoveDnc({ row, onClose, onDone }) {
     if (error) { setError(error); setBusy(false); } else onDone();
   }
   return (
-    <Modal title={row.source === "ai_opt_out" ? `Undo the AI for ${row.name || fmtPhone(row.phone_e164)}?` : `Remove ${row.name || fmtPhone(row.phone_e164)}?`} sub="They could then be messaged again. This is logged with your name and reason." onClose={onClose}
-      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-danger" form="dnc-rm" disabled={busy || !reason.trim()}>{busy ? "Removing…" : "Remove"}</button></>}>
+    <Modal title={`Undo Do Not Contact for ${row.name || fmtPhone(row.phone_e164)}?`} sub="Only for mistakes. They’ll be treated as a normal lead again and could be messaged. This is logged with your name and reason, and the AI won’t add them back on its own." onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn btn-danger" form="dnc-rm" disabled={busy || !reason.trim()}>{busy ? "Undoing…" : "Undo"}</button></>}>
       <form id="dnc-rm" className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
-        <ReasonPicker id="dnc-rm-reason" label="Why are they being removed?" reasons={DNC_REMOVE_REASONS.filter((r) => row.source === "ai_opt_out" || !r.startsWith("The AI"))} value={reason} onChange={setReason} required />
+        <ReasonPicker id="dnc-rm-reason" label="Why is this a mistake?" reasons={DNC_REMOVE_REASONS.filter((r) => row.source === "ai_opt_out" || !r.startsWith("The AI"))} value={reason} onChange={setReason} required />
       </form>
     </Modal>
   );

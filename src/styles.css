@@ -139,7 +139,7 @@ tr.dim td { opacity: .55; }
 .modal-body { padding: 12px 20px 20px; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
 .modal-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 12px 18px; border-radius: 12px; z-index: 60; box-shadow: 0 10px 30px rgba(12,15,36,.3); max-width: calc(100vw - 32px); }
-.toast.t-bad { background: var(--bad); }
+.toast.t-bad { background: var(--bad); color: #fff; } /* .t-bad elsewhere means red text: keep toast text white */
 .secret { font-family: ui-monospace, Menlo, monospace; font-size: 20px; letter-spacing: .04em; background: #F7F9FC; border: 1px dashed #B9C4D6; border-radius: 10px; padding: 14px; text-align: center; user-select: all; }
 
 .empty { text-align: center; padding: 32px 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -284,7 +284,7 @@ pre.update { white-space: pre-wrap; background: #F7F9FC; border: 1px solid var(-
 .seg[role="radiogroup"] button + button { border-left: 1px solid #CBD3E0; }
 .seg[role="radiogroup"] button.active { background: var(--brand); color: #fff; }
 .b-hot { background: var(--orangebg); color: var(--orange-d); }
-.toast.t-warn { background: #7A4A00; }
+.toast.t-warn { background: #7A4A00; color: #fff; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .t-bad { color: var(--bad); font-weight: 600; }
 .row.spread, .spread { justify-content: space-between; }
