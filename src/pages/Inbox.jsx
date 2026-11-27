@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
@@ -65,7 +66,8 @@ export default function Inbox() {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
-  const [openId, setOpenId] = useState(null);
+  const [params] = useSearchParams();
+  const [openId, setOpenId] = useState(() => params.get("open")); // e.g. opened from a calendar item
   const [busy, setBusy] = useState("");
   const [agentF, setAgentF] = useAgentFilter();
 

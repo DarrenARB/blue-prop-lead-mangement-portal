@@ -67,6 +67,7 @@ export default function Layout() {
       { to: "/inbox", label: "Inbox", icon: ICONS.inbox, show: true, badge: unread ? { n: unread > 99 ? "99+" : unread, tone: "unread", label: `${unread} unread conversation${unread > 1 ? "s" : ""}` } : null },
       { to: "/hot", label: "Hot Leads", icon: ICONS.flame, show: true },
       { to: "/dates", label: "Dates", icon: ICONS.calendar, show: true, badge: due ? { n: due, tone: "warn", label: `${due} date${due > 1 ? "s" : ""} due or overdue` } : null },
+      { to: "/calendar", label: "Calendar", icon: ICONS.calgrid, show: true },
     ] },
     { key: "lists", title: "Lists & rules", items: [
       { to: "/dnc", label: "Do Not Contact", icon: ICONS.block, show: true },

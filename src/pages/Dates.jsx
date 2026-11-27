@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { fmtDate } from "../lib/format";
@@ -15,8 +16,8 @@ export const DATE_TYPES = {
 };
 // "Other" dates show the label the agent typed (e.g. "Transfer registered")
 export const typeLabel = (d) => (d.type === "other" && d.type_label ? d.type_label : DATE_TYPES[d.type]?.label);
-const iso = (d) => d.toISOString().slice(0, 10);
-const todayIso = () => iso(new Date(Date.now() + 2 * 3600e3)); // South African date
+export const iso = (d) => d.toISOString().slice(0, 10);
+export const todayIso = () => iso(new Date(Date.now() + 2 * 3600e3)); // South African date
 
 // For yearly dates (birthdays etc.) the next time it falls on or after today. Marking one done moves its date on a year.
 export function effectiveDate(d) {
@@ -44,20 +45,46 @@ export function bucketDates(rows) {
 const TABS = [["overdue", "Overdue"], ["today", "Today"], ["soon", "Next 7 days"], ["later", "Later"], ["done", "Done"]];
 const EMPTY = { overdue: "Nothing overdue. Well done.", today: "Nothing due today.", soon: "Nothing in the next 7 days.", later: "Nothing scheduled further ahead." };
 
-export default function Dates() {
-  const { profile, isAdmin } = useAuth();
+// Done / snooze / undo / delete, shared by the list and the calendar.
+export function useDateActions(load) {
   const toast = useToast();
+  const changed = () => { load(); window.dispatchEvent(new Event("bp:counts-changed")); };
+  return {
+    async done(d) {
+      // yearly dates: mark this year's one done by moving the base date on a year
+      const fields = d.yearly ? { due_on: `${Number(d.when.slice(0, 4)) + 1}${d.when.slice(4)}`, snoozed_until: null } : { done_at: new Date().toISOString() };
+      const { error } = await supabase.from("key_dates").update(fields).eq("id", d.id);
+      if (error) return toast(error.message, "bad");
+      toast(d.yearly ? "Done. See you next year." : "Marked as done"); changed();
+    },
+    async snooze(d, days) {
+      const until = iso(new Date(new Date(d.when).getTime() + days * 864e5));
+      const { error } = await supabase.from("key_dates").update({ snoozed_until: until }).eq("id", d.id);
+      if (error) return toast(error.message, "bad");
+      toast(`Snoozed to ${fmtDate(until)}`); changed();
+    },
+    async undo(d) {
+      const { error } = await supabase.from("key_dates").update({ done_at: null }).eq("id", d.id);
+      if (error) return toast(error.message, "bad");
+      changed();
+    },
+    async remove(d) {
+      if (!window.confirm("Delete this date?")) return false;
+      const { error } = await supabase.from("key_dates").delete().eq("id", d.id);
+      if (error) { toast(error.message, "bad"); return false; }
+      changed(); return true;
+    },
+  };
+}
+
+// Loads every date the person may see, with the agent's name.
+export function useKeyDates() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null);
-  const [suggest, setSuggest] = useState(null);
-  const [agentF, setAgentF] = useAgentFilter();
-  const readOnly = profile.role === "owner";
-
   const load = useCallback(async () => {
     try {
       const [d, people] = await Promise.all([
-        supabase.from("key_dates").select("*, contact:contacts(first_name, last_name, phone_e164, suburb)").order("due_on").limit(1000).then(must),
+        supabase.from("key_dates").select("*, contact:contacts(first_name, last_name, phone_e164, suburb)").order("due_on").limit(2000).then(must),
         supabase.from("profiles").select("id, full_name").then(must),
       ]);
       const names = Object.fromEntries((people ?? []).map((p) => [p.id, p.full_name]));
@@ -65,36 +92,33 @@ export default function Dates() {
     } catch (e) { setError(e); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  return { rows, error, load };
+}
+
+// List / Calendar switch shown on both pages
+export function DatesViewSwitch({ current }) {
+  return (
+    <div className="vseg" role="group" aria-label="View">
+      <Link to="/dates" className={`vseg-btn ${current === "list" ? "on" : ""}`} aria-current={current === "list" ? "page" : undefined}>List</Link>
+      <Link to="/calendar" className={`vseg-btn ${current === "calendar" ? "on" : ""}`} aria-current={current === "calendar" ? "page" : undefined}>Calendar</Link>
+    </div>
+  );
+}
+
+export default function Dates() {
+  const { profile, isAdmin } = useAuth();
+  const toast = useToast();
+  const { rows, error, load } = useKeyDates();
+  const [modal, setModal] = useState(null);
+  const [suggest, setSuggest] = useState(null);
+  const [agentF, setAgentF] = useAgentFilter();
+  const readOnly = profile.role === "owner";
   const b = useMemo(() => bucketDates((rows ?? []).filter((r) => !agentF || r.agent_id === agentF)), [rows, agentF]);
   // One status per tab so a long list never has to be scrolled through. Opens on the most urgent tab with items.
   const [tab, setTab] = useState(null);
   const view = tab ?? (TABS.find(([k]) => k !== "done" && b[k].length)?.[0] ?? "today");
 
-  async function done(d) {
-    // yearly dates: mark this year's one done by moving the base date on a year
-    const fields = d.yearly ? { due_on: `${Number(d.when.slice(0, 4)) + 1}${d.when.slice(4)}`, snoozed_until: null } : { done_at: new Date().toISOString() };
-    const { error } = await supabase.from("key_dates").update(fields).eq("id", d.id);
-    if (error) return toast(error.message, "bad");
-    toast(d.yearly ? "Done. See you next year." : "Marked as done"); load();
-    window.dispatchEvent(new Event("bp:counts-changed"));
-  }
-  async function snooze(d, days) {
-    const until = iso(new Date(new Date(d.when).getTime() + days * 864e5));
-    const { error } = await supabase.from("key_dates").update({ snoozed_until: until }).eq("id", d.id);
-    if (error) return toast(error.message, "bad");
-    toast(`Snoozed to ${fmtDate(until)}`); load();
-  }
-  async function undo(d) {
-    const { error } = await supabase.from("key_dates").update({ done_at: null }).eq("id", d.id);
-    if (error) return toast(error.message, "bad");
-    load();
-  }
-  async function remove(d) {
-    if (!window.confirm("Delete this date?")) return;
-    const { error } = await supabase.from("key_dates").delete().eq("id", d.id);
-    if (error) return toast(error.message, "bad");
-    load();
-  }
+  const { done, snooze, undo, remove } = useDateActions(load);
 
   const Section = ({ list, empty }) => (
     <section className="card stack">
@@ -135,7 +159,7 @@ export default function Dates() {
         </div>
         {!readOnly && <button className="btn btn-primary" onClick={() => setModal({})}><Icon d={ICONS.plus} />Add a date</button>}
       </div>
-      <div className="list-tools"><span /><AgentFilter value={agentF} onChange={setAgentF} /></div>
+      <div className="list-tools"><DatesViewSwitch current="list" /><AgentFilter value={agentF} onChange={setAgentF} /></div>
       <ErrorNote error={error} />
       {!rows && !error ? <Spinner /> : rows && rows.length === 0 ? (
         <div className="card"><Empty title="Nothing scheduled">Set a follow-up from any conversation in the Inbox, or add a date here.</Empty></div>
@@ -171,7 +195,7 @@ export default function Dates() {
   );
 }
 
-function SuggestModal({ d, onClose }) {
+export function SuggestModal({ d, onClose }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState(null);
