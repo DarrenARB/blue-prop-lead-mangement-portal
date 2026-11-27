@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { ROLE_LABEL, initials } from "../lib/format";
@@ -46,12 +46,20 @@ export default function Layout() {
   const [unread, setUnread] = useState(0);
   const [due, setDue] = useState(0);
   const [pwHelp, setPwHelp] = useState(0);
+  const [shotgun, setShotgun] = useState(0);   // Shotgun entries this person can decide
+  const [dncCheck, setDncCheck] = useState(0); // AI Do Not Contact entries waiting for this person's check
+  const [hotNew, setHotNew] = useState(0);     // hot leads not yet exported to the CRM
+  const [blocked, setBlocked] = useState(0);   // campaigns that can't send (e.g. number disconnected)
   useEffect(() => {
     let alive = true;
     const refresh = () => {
       const today = new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10);
       supabase.from("conversations").select("id", { count: "exact", head: true }).eq("unread", true).eq("archived", false).then(({ count }) => alive && setUnread(count ?? 0));
       if (isAdmin) supabase.from("password_help_requests").select("id", { count: "exact", head: true }).is("resolved_at", null).then(({ count }) => alive && setPwHelp(count ?? 0));
+      if (isAdmin || profile.role === "owner") supabase.rpc("shotgun_waiting_count").then(({ data }) => alive && setShotgun(data ?? 0));
+      supabase.rpc("dnc_review_count").then(({ data }) => alive && setDncCheck(data ?? 0));
+      supabase.from("hot_leads").select("id", { count: "exact", head: true }).eq("active", true).is("exported_at", null).then(({ count }) => alive && setHotNew(count ?? 0));
+      supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("status", "blocked").then(({ count }) => alive && setBlocked(count ?? 0));
       if (profile.role !== "owner") supabase.from("key_dates").select("id", { count: "exact", head: true }).is("done_at", null).eq("yearly", false).eq("agent_id", profile.id).lte("due_on", today).then(({ count }) => alive && setDue(count ?? 0));
     };
     refresh();
@@ -63,15 +71,15 @@ export default function Layout() {
   const sections = [
     { key: "main", items: [{ to: "/", label: "Home", icon: ICONS.home, show: true }] },
     { key: "work", title: "Work", items: [
-      { to: "/campaigns", label: "Campaigns", icon: ICONS.send, show: true },
+      { to: "/campaigns", label: "Campaigns", icon: ICONS.send, show: true, badge: blocked ? { n: blocked, tone: "bad", label: `${blocked} campaign${blocked > 1 ? "s" : ""} can’t send` } : null },
       { to: "/inbox", label: "Inbox", icon: ICONS.inbox, show: true, badge: unread ? { n: unread > 99 ? "99+" : unread, tone: "unread", label: `${unread} unread conversation${unread > 1 ? "s" : ""}` } : null },
-      { to: "/hot", label: "Hot Leads", icon: ICONS.flame, show: true },
+      { to: "/hot", label: "Hot Leads", icon: ICONS.flame, show: true, badge: hotNew ? { n: hotNew > 99 ? "99+" : hotNew, tone: "hot", label: `${hotNew} hot lead${hotNew > 1 ? "s" : ""} not yet exported` } : null },
       { to: "/dates", label: "Dates", icon: ICONS.calendar, show: true, badge: due ? { n: due, tone: "warn", label: `${due} date${due > 1 ? "s" : ""} due or overdue` } : null },
       { to: "/calendar", label: "Calendar", icon: ICONS.calgrid, show: true },
     ] },
     { key: "lists", title: "Lists & rules", items: [
-      { to: "/dnc", label: "Do Not Contact", icon: ICONS.block, show: true },
-      { to: "/shotgun", label: "Shotgun list", icon: ICONS.shotgun, show: isAdmin || profile.role === "owner" },
+      { to: "/dnc", label: "Do Not Contact", icon: ICONS.block, show: true, badge: dncCheck ? { n: dncCheck, tone: "warn", label: `${dncCheck} AI entr${dncCheck > 1 ? "ies" : "y"} waiting for your check` } : null },
+      { to: "/shotgun", label: "Shotgun list", icon: ICONS.shotgun, show: isAdmin || profile.role === "owner", badge: shotgun ? { n: shotgun, tone: "warn", label: `${shotgun} Shotgun entr${shotgun > 1 ? "ies" : "y"} waiting for your decision` } : null },
       { to: "/rules", label: "Rules", icon: ICONS.sliders, show: isAdmin },
     ] },
     { key: "admin", title: "Admin", items: [
@@ -85,11 +93,28 @@ export default function Layout() {
     ] },
   ].map((sec) => ({ ...sec, items: sec.items.filter((i) => i.show) })).filter((sec) => sec.items.length);
 
+  // A badge pulses when its number goes up, so a change is noticed; the tab title shows the total.
+  const allBadges = sections.flatMap((sec) => sec.items).filter((i) => i.badge);
+  const totalN = allBadges.reduce((a, i) => a + (typeof i.badge.n === "number" ? i.badge.n : 100), 0);
+  const prevCounts = useRef({});
+  const [pulse, setPulse] = useState({});
+  useEffect(() => {
+    const now = Object.fromEntries(allBadges.map((i) => [i.to, typeof i.badge.n === "number" ? i.badge.n : 100]));
+    const up = Object.keys(now).filter((k) => prevCounts.current[k] !== undefined && now[k] > prevCounts.current[k]);
+    for (const k of Object.keys(prevCounts.current)) if (!(k in now)) delete prevCounts.current[k];
+    // first load: remember the numbers without pulsing
+    if (Object.keys(prevCounts.current).length || up.length) {
+      if (up.length) { setPulse(Object.fromEntries(up.map((k) => [k, Date.now()]))); setTimeout(() => setPulse({}), 2600); }
+    }
+    prevCounts.current = { ...prevCounts.current, ...now };
+    document.title = totalN ? `(${totalN > 99 ? "99+" : totalN}) Blue PROP Lead Portal` : "Blue PROP Lead Portal";
+  }, [totalN, allBadges.map((i) => `${i.to}:${i.badge.n}`).join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isActivePath = (to) => (to === "/" ? loc.pathname === "/" : loc.pathname === to || loc.pathname.startsWith(to + "/"));
   const navItem = (l) => (
     <NavLink key={l.to} to={l.to} end={l.to === "/"} className={({ isActive }) => `nav ${isActive ? "active" : ""}`}>
       <Icon d={l.icon} />{l.label}
-      {l.badge && <span className={`nav-badge nb-${l.badge.tone}`} title={l.badge.label} aria-label={l.badge.label}>{l.badge.n}</span>}
+      {l.badge && <span key={pulse[l.to] ?? "b"} className={`nav-badge nb-${l.badge.tone} ${pulse[l.to] ? "nb-pulse" : ""}`} title={l.badge.label} aria-label={l.badge.label}>{l.badge.n}</span>}
     </NavLink>
   );
 
