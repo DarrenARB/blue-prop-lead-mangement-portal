@@ -112,7 +112,13 @@ export function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={show}>
       {children}
-      {toast && <div className={`toast t-${toast.tone}`} role="status" key={toast.id}>{toast.text}</div>}
+      {toast && (
+        // own class names (toast-ok/bad/warn): the shared t-ok/t-bad text colours made toasts unreadable
+        <div className={`toast toast-${toast.tone === "bad" ? "bad" : toast.tone === "warn" ? "warn" : "ok"}`} role={toast.tone === "bad" ? "alert" : "status"} key={toast.id}>
+          <span className="toast-ic" aria-hidden="true">{toast.tone === "bad" || toast.tone === "warn" ? "!" : "✓"}</span>
+          <span>{toast.text}</span>
+        </div>
+      )}
     </ToastCtx.Provider>
   );
 }
