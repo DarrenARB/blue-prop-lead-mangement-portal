@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "../lib/supabase";
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { fmtDate, fmtPhone } from "../lib/format";
@@ -65,6 +66,12 @@ export default function Calendar() {
     return [s, addDays(s, 41)]; // 6 weeks always, so the grid never jumps
   }, [view, cursor]);
   const items = useMemo(() => occurrences((rows ?? []).filter((r) => !agentF || r.agent_id === agentF), range[0], range[1]), [rows, agentF, range]);
+  // South African public holidays in view (campaigns skip them unless switched off)
+  const [hols, setHols] = useState({});
+  useEffect(() => {
+    supabase.rpc("sa_public_holidays", { p_from: range[0], p_to: range[1] })
+      .then(({ data }) => setHols(Object.fromEntries((data ?? []).map((h) => [h.day, h.name]))));
+  }, [range]);
   const byDay = useMemo(() => { const m = {}; for (const d of items) (m[d.when] ??= []).push(d); return m; }, [items]);
 
   const step = (n) => setCursor(view === "day" ? addDays(cursor, n) : view === "week" ? addDays(cursor, 7 * n) : addMonths(cursor, n));
@@ -95,6 +102,7 @@ export default function Calendar() {
     const list = byDay[day] ?? [];
     return (
       <div className={big ? "cal-daylist big" : "cal-daylist"}>
+        {hols[day] && <p className="cal-hol-note small">Public holiday: {hols[day]}. Campaigns don’t send today unless they’re set to.</p>}
         {list.length === 0 ? <p className="muted small" style={{ margin: 0 }}>Nothing on this day.</p> : list.map((d) => {
           const st = stateOf(d, today);
           return (
@@ -153,9 +161,12 @@ export default function Calendar() {
               return (
                 <div key={day} role="gridcell" tabIndex={0} aria-selected={picked === day}
                   aria-label={`${label(day, { weekday: "long", day: "numeric", month: "long" })}: ${list.length ? `${list.length} item${list.length > 1 ? "s" : ""}` : "nothing"}`}
-                  className={`cal-cell ${other ? "other" : ""} ${day === today ? "today" : ""} ${picked === day ? "is-picked" : ""}`}
+                  className={`cal-cell ${hols[day] ? "hol" : ""} ${other ? "other" : ""} ${day === today ? "today" : ""} ${picked === day ? "is-picked" : ""}`}
                   onClick={() => setPicked(day)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPicked(day); } }}>
-                  <button type="button" className="cal-num" onClick={(e) => { e.stopPropagation(); openDay(day); }} aria-label={`Open ${label(day, { day: "numeric", month: "long" })} in day view`}>{Number(day.slice(8))}</button>
+                  <div className="cal-cell-top">
+                    <button type="button" className="cal-num" onClick={(e) => { e.stopPropagation(); openDay(day); }} aria-label={`Open ${label(day, { day: "numeric", month: "long" })} in day view`}>{Number(day.slice(8))}</button>
+                    {hols[day] && <span className="cal-hol" title={`Public holiday: ${hols[day]}`}>{hols[day]}</span>}
+                  </div>
                   <div className="cal-chips">
                     {list.slice(0, 3).map((d) => <Chip key={`${d.id}-${d.when}`} d={d} />)}
                     {list.length > 3 && <span className="cal-more">+{list.length - 3} more</span>}
@@ -180,6 +191,7 @@ export default function Calendar() {
               <button type="button" className="cal-whead" onClick={() => openDay(day)} aria-label={`Open ${label(day, { weekday: "long", day: "numeric", month: "long" })}`}>
                 <span className="small">{label(day, { weekday: "short" })}</span>
                 <span className="cal-wnum">{Number(day.slice(8))}</span>
+                {hols[day] && <span className="cal-hol">{hols[day]}</span>}
               </button>
               <div className="cal-wbody">
                 {(byDay[day] ?? []).map((d) => <Chip key={`${d.id}-${d.when}`} d={d} />)}

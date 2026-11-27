@@ -286,8 +286,8 @@ function EditItem({ item, projectValue, allocated, onClose, onSaved }) {
           ))}
         </div>
         {f.status === "in_progress" && (
-          <Field label={`How far along? ${f.progress}%`} id="it-prog">
-            <input id="it-prog" type="range" min="0" max="95" step="5" value={f.progress} onChange={(e) => setF({ ...f, progress: e.target.value })} />
+          <Field label="How far along?" id="it-prog">
+            <span className="row" style={{ gap: 8 }}><input id="it-prog" className="input" type="number" inputMode="numeric" min="0" max="99" step="1" value={f.progress} onChange={(e) => setF({ ...f, progress: e.target.value })} style={{ width: 100 }} /><span className="muted">%</span></span>
           </Field>
         )}
         <Field label="Value (R, excl. VAT)" id="it-price" hint={(() => {
@@ -563,8 +563,8 @@ function ExtraModal({ item, scopeItems, onClose, onSaved }) {
           ))}
         </div>
         {f.status === "in_progress" && (
-          <Field label={`How far along? ${f.progress}%`} id="x-prog">
-            <input id="x-prog" type="range" min="0" max="95" step="5" value={f.progress} onChange={set("progress")} />
+          <Field label="How far along?" id="x-prog">
+            <span className="row" style={{ gap: 8 }}><input id="x-prog" className="input" type="number" inputMode="numeric" min="0" max="99" step="1" value={f.progress} onChange={set("progress")} style={{ width: 100 }} /><span className="muted">%</span></span>
           </Field>
         )}
         <Field label="Note (optional)" id="x-notes"><input id="x-notes" className="input" value={f.notes} onChange={set("notes")} /></Field>

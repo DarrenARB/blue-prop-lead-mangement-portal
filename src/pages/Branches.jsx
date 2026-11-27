@@ -153,7 +153,7 @@ function BranchModal({ branch, onClose, onSaved }) {
     if (!loc.province) return setError("Choose the branch’s province.");
     setBusy(true);
     const row = {
-      name: name.trim(), icon, color, radius_km: Number(radius),
+      name: name.trim(), icon, color, radius_km: Math.max(2, Math.min(100, Math.round(Number(radius)) || 10)),
       address: loc.address?.trim() || null, lat: loc.lat, lng: loc.lng,
       suburb: loc.suburb, city: loc.city, province: loc.province,
     };
@@ -170,7 +170,7 @@ function BranchModal({ branch, onClose, onSaved }) {
       <form id="branch-form" className="stack" onSubmit={submit}>
         <Field label="Branch name" id="b-name"><input id="b-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ferndale" required /></Field>
 
-        <LocationPicker value={loc} onChange={setLoc} icon={icon} color={color} radiusKm={Number(radius)}>
+        <LocationPicker value={loc} onChange={setLoc} icon={icon} color={color} radiusKm={Math.max(2, Math.min(100, Number(radius) || 10))}>
           <Field label="Town or city" id="b-city" hint="Shown on the branch card.">
             <input id="b-city" className="input" value={loc.city ?? ""} onChange={(e) => setLoc({ ...loc, city: e.target.value || null })} placeholder="Randburg" />
           </Field>
@@ -208,8 +208,8 @@ function BranchModal({ branch, onClose, onSaved }) {
           </div>
         </fieldset>
 
-        <Field label={`Area it covers: ${radius} km around the branch`} id="b-radius" hint="Shown as a circle on the map, so you can see where branches overlap and where there are gaps.">
-          <input id="b-radius" type="range" min="2" max="100" step="1" value={radius} onChange={(e) => setRadius(e.target.value)} />
+        <Field label="Area it covers around the branch" id="b-radius" hint="Shown as a circle on the map, so you can see where branches overlap and where there are gaps.">
+          <span className="row" style={{ gap: 8 }}><input id="b-radius" className="input" type="number" inputMode="numeric" min="2" max="100" step="1" value={radius} onChange={(e) => setRadius(e.target.value)} style={{ width: 100 }} /><span className="muted">km</span></span>
         </Field>
         <ErrorNote error={error} />
       </form>

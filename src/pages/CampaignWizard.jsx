@@ -105,7 +105,7 @@ function Wizard({ id }) {
       if (!camp) throw new Error("That campaign doesn’t exist or you can’t see it.");
       const [m, settings, agent, nums, leadCount, sample, upload] = await Promise.all([
         supabase.from("campaign_messages").select("*").eq("campaign_id", id).order("position").then(must),
-        supabase.from("settings").select("window_days, window_start, window_end, timezone").eq("id", 1).single().then(must),
+        supabase.from("settings").select("window_days, window_start, window_end, timezone, skip_public_holidays").eq("id", 1).single().then(must),
         supabase.from("profiles").select("id, full_name").eq("id", camp.agent_id).maybeSingle().then(must),
         supabase.rpc("list_whatsapp_numbers").then(must),
         supabase.from("leads").select("id", { count: "exact", head: true }).eq("campaign_id", id).then((r) => { if (r.error) throw r.error; return r.count ?? 0; }),
@@ -570,8 +570,13 @@ function WhatsAppPreview({ msgs, sample, agent }) {
 // ---------- 4. Schedule ----------
 function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
   const d = ctx.settings;
-  const [s, setS] = useState({ days: c.schedule?.days ?? d.window_days ?? [1, 2, 3, 4, 5], start: c.schedule?.start ?? d.window_start ?? "07:30", end: c.schedule?.end ?? d.window_end ?? "18:00", start_date: c.schedule?.start_date ?? "" });
+  const [s, setS] = useState({ days: c.schedule?.days ?? d.window_days ?? [1, 2, 3, 4, 5], start: c.schedule?.start ?? d.window_start ?? "07:30", end: c.schedule?.end ?? d.window_end ?? "18:00", start_date: c.schedule?.start_date ?? "", skip_holidays: c.schedule?.skip_holidays ?? d.skip_public_holidays ?? true });
   const today = localToday(d.timezone);
+  // the next few public holidays, so the agent can see what will be skipped
+  const [hols, setHols] = useState([]);
+  useEffect(() => {
+    supabase.rpc("sa_public_holidays", { p_from: today, p_to: addDays(today, 90) }).then(({ data }) => setHols(data ?? []));
+  }, [today]);
   const maxDate = addYears(today, 1);
   const dateProblem = dateIssue(s.start_date, today, maxDate);
   const ok = (v) => v.days.length > 0 && v.start < v.end && !dateIssue(v.start_date, today, maxDate);
@@ -604,6 +609,15 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
             <input id="sch-date" className={`input ${dateProblem ? "input-bad" : ""}`} type="date" min={today} max={maxDate} value={s.start_date} aria-invalid={!!dateProblem} onChange={(e) => setS({ ...s, start_date: e.target.value })} />
           </Field>
         </div>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={!!s.skip_holidays} onChange={(e) => setS({ ...s, skip_holidays: e.target.checked })} />
+          Don’t send on South African public holidays
+        </label>
+        {s.skip_holidays && hols.length > 0 && (
+          <p className="muted small" style={{ margin: "-6px 0 0 26px" }}>
+            Coming up: {hols.slice(0, 3).map((h) => `${h.name} (${new Date(`${h.day}T00:00:00Z`).toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })})`).join(", ")}. Sending carries on the next working day.
+          </p>
+        )}
       </fieldset>
       {!valid && <div className="note note-warn">{!s.days.length ? "Pick at least one day." : s.start >= s.end ? "The end time must be after the start time." : dateProblem}</div>}
       <p className="small muted">Message 1 goes first. If the lead hasn’t replied, message 2 follows {daysText(msgs[1]?.delay_days)} later, then message 3 another {daysText(msgs[2]?.delay_days)} after that (about {daysText(total)} from first to last message).</p>
@@ -616,6 +630,7 @@ function StepSchedule({ c, ctx, msgs, editable, save, next, back }) {
 export function localToday(tz = "Africa/Johannesburg") {
   return new Date().toLocaleDateString("en-CA", { timeZone: tz || "Africa/Johannesburg" });
 }
+function addDays(iso, n) { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 function addYears(iso, n) { const [y, m, d] = iso.split("-"); return `${Number(y) + n}-${m}-${d}`; }
 function dateIssue(date, today, max) {
   if (!date) return null;
@@ -642,7 +657,7 @@ function StepReview({ c, ctx, msgs, editable, go, onDelete }) {
     { ok: !!n && n.status === "ok", label: n ? `Number status: ${NUMBER_STATUS[n.status]?.[0] ?? n.status}` : "Number status unknown (link a number first)", to: numbers, toLabel: "lemlist & numbers" },
     { ok: ctx.leads > 0, label: ctx.leads ? `${ctx.leads.toLocaleString("en-ZA")} lead${ctx.leads === 1 ? "" : "s"} ready` : "No leads uploaded yet", step: 2 },
     { ok: msgProblem < 0, label: msgLabel, step: 3 },
-    { ok: !!c.schedule?.days?.length, label: c.schedule?.days?.length ? `Sends ${c.schedule.days.map((d) => DAYS.find((x) => x[0] === d)?.[1]).join(", ")}, ${c.schedule.start}–${c.schedule.end}` : "Sending days and times not set", step: 4 },
+    { ok: !!c.schedule?.days?.length, label: c.schedule?.days?.length ? `Sends ${c.schedule.days.map((d) => DAYS.find((x) => x[0] === d)?.[1]).join(", ")}, ${c.schedule.start}–${c.schedule.end}${c.schedule.skip_holidays === false ? ", including public holidays" : ", not on public holidays"}` : "Sending days and times not set", step: 4 },
     // a start date that was fine when chosen can pass while the campaign waits as a draft
     ...(c.schedule?.start_date ? [{ ok: c.schedule.start_date >= localToday(ctx.settings?.timezone), label: c.schedule.start_date >= localToday(ctx.settings?.timezone) ? `Starts on ${c.schedule.start_date}` : `Start date ${c.schedule.start_date} has passed. Pick a new one or clear it`, step: 4 }] : []),
   ];

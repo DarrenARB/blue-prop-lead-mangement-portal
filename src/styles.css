@@ -671,3 +671,19 @@ tr.is-picked td { background: #EEF0FA; }
   .cal-detail { grid-template-columns: 1fr; gap: 2px; }
   .cal-detail dd { margin-bottom: 8px; }
 }
+
+/* Rules: public holidays */
+.hol-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.hol-list li { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-radius: 8px; background: #F7F8FC; }
+.hol-list li.dim { opacity: .65; }
+.hol-date { width: 130px; flex: none; font-size: 13px; font-weight: 600; color: var(--brand); }
+.hol-name { flex: 1; min-width: 0; }
+@media (max-width: 560px) { .hol-list li { flex-wrap: wrap; } .hol-date { width: auto; } .hol-name { flex-basis: 100%; order: 2; } .hol-list li .btn { margin-left: auto; } }
+
+/* Calendar: public holidays */
+.cal-cell-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.cal-hol { font-size: 11px; color: #7A4A00; background: #FFF4DE; border-radius: 4px; padding: 1px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cal-cell.hol { background: #FFFBF2; }
+.cal-hol-note { margin: 0 0 4px; padding: 6px 10px; border-radius: 8px; background: #FFF4DE; color: #7A4A00; }
+.cal-whead .cal-hol { margin-top: 2px; max-width: 100%; }
+@media (max-width: 640px) { .cal-cell .cal-hol { display: none; } .cal-cell.hol .cal-num { text-decoration: underline dotted #B54708; } }
