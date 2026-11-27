@@ -108,8 +108,8 @@ export default function Lemlist() {
       {!isOwnerView && <section className="card">
         <div className="card-head">
           <div>
-            <h2>lemlist users in the portal</h2>
-            <p className="muted small">Each lemlist user can hold up to {SLOTS_PER_USER} WhatsApp numbers.</p>
+            <h2>lemlist accounts holding the numbers</h2>
+            <p className="muted small">One card per lemlist account (licence). Each account can hold up to {SLOTS_PER_USER} WhatsApp numbers. The account holder doesn’t have to use them: which agent sends from each number is set in the numbers list below.</p>
           </div>
           {isAdmin && (
             <div className="row">
@@ -128,7 +128,7 @@ export default function Lemlist() {
               return (
                 <div key={u.id} className="kpi">
                   <div className="row spread"><strong>{u.name}</strong><span className="mono muted">{u.id}</span></div>
-                  <div className="kpi-value" style={{ fontSize: 22 }}>{used} of {SLOTS_PER_USER}<span className="muted" style={{ fontSize: 14, fontWeight: 400 }}> slots used</span></div>
+                  <div className="kpi-value" style={{ fontSize: 22 }}>{used} of {SLOTS_PER_USER}<span className="muted" style={{ fontSize: 14, fontWeight: 400 }}> numbers on this account</span></div>
                   <div className="bar" style={{ marginTop: 8 }}><span className="s-prog" style={{ width: `${(used / SLOTS_PER_USER) * 100}%`, opacity: 1 }} /></div>
                   <div className="kpi-sub" style={{ marginTop: 8 }}>
                     {SLOTS_PER_USER - used > 0 ? `${SLOTS_PER_USER - used} free slot${SLOTS_PER_USER - used > 1 ? "s" : ""}` : "Full: buy another licence for more numbers"}
