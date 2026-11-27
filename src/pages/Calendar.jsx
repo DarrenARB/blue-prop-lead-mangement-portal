@@ -40,7 +40,7 @@ function occurrences(rows, from, to) {
 }
 const stateOf = (d, today) => (d.done_at && !d.yearly ? "done" : d.when < today ? "late" : d.when === today ? "today" : "soon");
 
-export default function Calendar() {
+export default function Calendar({ onSwitch }) {
   const { profile, isAdmin } = useAuth();
   const toast = useToast();
   const { rows, error, load } = useKeyDates();
@@ -129,12 +129,12 @@ export default function Calendar() {
       <div className="page-head">
         <div>
           <p className="eyebrow">{readOnly ? "Your agents" : isAdmin ? "All agents" : "Your contacts"}</p>
-          <h1>Calendar</h1>
+          <h1>Dates &amp; follow-ups</h1>
           <p className="muted">Follow-ups, birthdays, home anniversaries and leases ending, by day, week or month. Click a day to see everything on it.</p>
         </div>
         {!readOnly && <button className="btn btn-primary" onClick={() => setModal({ due_on: view === "month" ? picked : cursor })}><Icon d={ICONS.plus} />Add a date</button>}
       </div>
-      <div className="list-tools"><DatesViewSwitch current="calendar" /><AgentFilter value={agentF} onChange={setAgentF} /></div>
+      <div className="list-tools"><DatesViewSwitch current="calendar" onChange={onSwitch} /><AgentFilter value={agentF} onChange={setAgentF} /></div>
 
       <div className="cal-bar">
         <button className="btn btn-sm" onClick={() => { setCursor(today); setPicked(today); }}>Today</button>

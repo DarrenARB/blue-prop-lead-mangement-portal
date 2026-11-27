@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import Calendar from "./Calendar";
 import { callFn, must, supabase } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
 import { fmtDate } from "../lib/format";
@@ -95,17 +96,38 @@ export function useKeyDates() {
   return { rows, error, load };
 }
 
-// List / Calendar switch shown on both pages
-export function DatesViewSwitch({ current }) {
+// List / Calendar switch, shown on both views of the Dates page
+export function DatesViewSwitch({ current, onChange }) {
   return (
-    <div className="vseg" role="group" aria-label="View">
-      <Link to="/dates" className={`vseg-btn ${current === "list" ? "on" : ""}`} aria-current={current === "list" ? "page" : undefined}>List</Link>
-      <Link to="/calendar" className={`vseg-btn ${current === "calendar" ? "on" : ""}`} aria-current={current === "calendar" ? "page" : undefined}>Calendar</Link>
+    <div className="vseg" role="group" aria-label="How to see your dates">
+      {[["calendar", "Calendar"], ["list", "List"]].map(([k, l]) => (
+        <button key={k} type="button" className={`vseg-btn ${current === k ? "on" : ""}`} aria-pressed={current === k} onClick={() => onChange(k)}>{l}</button>
+      ))}
     </div>
   );
 }
 
+// One Dates page with two views. Calendar is the default; each person's choice is remembered on their
+// account (and in this browser), so they always land in the view they last picked.
 export default function Dates() {
+  const { profile } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const [view, setView] = useState(() => {
+    const fromUrl = params.get("view");
+    if (fromUrl === "list" || fromUrl === "calendar") return fromUrl;
+    try { const v = localStorage.getItem(`bp:dates-view:${profile.id}`); if (v) return v; } catch { /* private mode */ }
+    return profile.ui_prefs?.dates_view ?? "calendar";
+  });
+  function choose(v) {
+    setView(v);
+    if (params.get("view")) setParams({}, { replace: true });
+    try { localStorage.setItem(`bp:dates-view:${profile.id}`, v); } catch { /* private mode */ }
+    supabase.rpc("set_ui_pref", { p_key: "dates_view", p_value: v }).then(() => {});
+  }
+  return view === "list" ? <DatesList onSwitch={choose} /> : <Calendar onSwitch={choose} />;
+}
+
+function DatesList({ onSwitch }) {
   const { profile, isAdmin } = useAuth();
   const toast = useToast();
   const { rows, error, load } = useKeyDates();
@@ -159,7 +181,7 @@ export default function Dates() {
         </div>
         {!readOnly && <button className="btn btn-primary" onClick={() => setModal({})}><Icon d={ICONS.plus} />Add a date</button>}
       </div>
-      <div className="list-tools"><DatesViewSwitch current="list" /><AgentFilter value={agentF} onChange={setAgentF} /></div>
+      <div className="list-tools"><DatesViewSwitch current="list" onChange={onSwitch} /><AgentFilter value={agentF} onChange={setAgentF} /></div>
       <ErrorNote error={error} />
       {!rows && !error ? <Spinner /> : rows && rows.length === 0 ? (
         <div className="card"><Empty title="Nothing scheduled">Set a follow-up from any conversation in the Inbox, or add a date here.</Empty></div>

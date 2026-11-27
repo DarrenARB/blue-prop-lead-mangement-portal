@@ -18,7 +18,6 @@ import CampaignWizard from "./pages/CampaignWizard";
 import Inbox from "./pages/Inbox";
 import HotLeads from "./pages/HotLeads";
 import Dates from "./pages/Dates";
-import Calendar from "./pages/Calendar";
 import Dnc from "./pages/Dnc";
 import Shotgun from "./pages/Shotgun";
 import Rules from "./pages/Rules";
@@ -58,7 +57,7 @@ export default function App() {
         <Route path="inbox" element={<Inbox />} />
         <Route path="hot" element={<HotLeads />} />
         <Route path="dates" element={<Dates />} />
-        <Route path="calendar" element={<Calendar />} />
+        <Route path="calendar" element={<Navigate to="/dates?view=calendar" replace />} />
         <Route path="dnc" element={<Dnc />} />
         <Route path="shotgun" element={isAdmin || profile.role === "owner" ? <Shotgun /> : <Navigate to="/" />} />
         <Route path="rules" element={isAdmin ? <Rules /> : <Navigate to="/" />} />
